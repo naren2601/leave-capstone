@@ -1,4 +1,3 @@
-"""Domain models."""
 """Pydantic models for LeaveDesk.
 
 Validators raise ValueError, which Pydantic reports as a ValidationError.
@@ -7,8 +6,7 @@ LeaveService.apply will convert that into InvalidLeaveRequestError.
 
 import re
 from datetime import date
-from enum import Enum
-from typing import Optional
+from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -20,20 +18,20 @@ MAX_REASON_LENGTH = 500
 SATURDAY = 5  # date.weekday(): Monday is 0 and Sunday is 6
 
 
-class LeaveType(str, Enum):
+class LeaveType(StrEnum):
     ANNUAL = "ANNUAL"
     SICK = "SICK"
     CASUAL = "CASUAL"
 
 
-class LeaveStatus(str, Enum):
+class LeaveStatus(StrEnum):
     PENDING = "PENDING"
     APPROVED = "APPROVED"
     REJECTED = "REJECTED"
     CANCELLED = "CANCELLED"
 
 
-class DayPart(str, Enum):
+class DayPart(StrEnum):
     FULL = "FULL"
     AM = "AM"
     PM = "PM"
@@ -59,7 +57,7 @@ class Employee(BaseModel):
     id: str = Field(min_length=1)
     name: str
     email: str
-    manager_id: Optional[str] = None
+    manager_id: str | None = None
 
     @field_validator("name")
     @classmethod
@@ -103,7 +101,7 @@ class LeaveRequest(BaseModel):
     reason: str
     status: LeaveStatus = LeaveStatus.PENDING
     days: float = Field(default=0, ge=0)
-    decision_note: Optional[str] = None
+    decision_note: str | None = None
 
     @field_validator("reason")
     @classmethod
@@ -111,8 +109,7 @@ class LeaveRequest(BaseModel):
         value = value.strip()
         if not MIN_REASON_LENGTH <= len(value) <= MAX_REASON_LENGTH:
             raise ValueError(
-                f"reason must be {MIN_REASON_LENGTH} to "
-                f"{MAX_REASON_LENGTH} characters"
+                f"reason must be {MIN_REASON_LENGTH} to {MAX_REASON_LENGTH} characters"
             )
         return value
 
@@ -129,17 +126,13 @@ class LeaveRequest(BaseModel):
 
         return self
 
-    def transition_to(
-        self, new_status: LeaveStatus, today: Optional[date] = None
-    ) -> None:
+    def transition_to(self, new_status: LeaveStatus, today: date | None = None) -> None:
         """Change status, or raise InvalidTransitionError if not allowed.
 
         Tests can pass today so the result does not depend on the real date.
         """
         if new_status not in ALLOWED_TRANSITIONS[self.status]:
-            raise InvalidTransitionError(
-                f"cannot change {self.status.value} to {new_status.value}"
-            )
+            raise InvalidTransitionError(f"cannot change {self.status.value} to {new_status.value}")
 
         today = today or date.today()
         leave_has_started = today >= self.start_date
@@ -148,8 +141,6 @@ class LeaveRequest(BaseModel):
             and new_status is LeaveStatus.CANCELLED
             and leave_has_started
         ):
-            raise InvalidTransitionError(
-                "approved leave cannot be cancelled after it has started"
-            )
+            raise InvalidTransitionError("approved leave cannot be cancelled after it has started")
 
         self.status = new_status

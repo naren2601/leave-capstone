@@ -199,9 +199,7 @@ def test_casual_leave_up_to_two_days_is_allowed(days):
 
 
 def test_casual_leave_over_two_days_is_rejected():
-    request = make_request(
-        LeaveType.CASUAL, TODAY, days_from_today(2), days=3
-    )
+    request = make_request(LeaveType.CASUAL, TODAY, days_from_today(2), days=3)
 
     with pytest.raises(PolicyViolationError):
         CasualLeavePolicy().validate(request, TODAY)

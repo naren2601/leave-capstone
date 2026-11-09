@@ -53,9 +53,7 @@ def test_recipients_follow_the_spec(event, expected):
 
 
 def test_rejection_message_includes_the_reason():
-    [notification] = build_notifications(
-        NotificationEvent.REJECTED, REQUEST, EMPLOYEE, MANAGER
-    )
+    [notification] = build_notifications(NotificationEvent.REJECTED, REQUEST, EMPLOYEE, MANAGER)
 
     assert "Team is short" in notification.message
 
@@ -118,9 +116,7 @@ class FailingNotifier(Notifier):
 
 def test_dispatch_sends_every_notification_on_every_channel():
     email, in_app = EmailNotifier(), InAppNotifier()
-    notifications = build_notifications(
-        NotificationEvent.SUBMITTED, REQUEST, EMPLOYEE, MANAGER
-    )
+    notifications = build_notifications(NotificationEvent.SUBMITTED, REQUEST, EMPLOYEE, MANAGER)
 
     run(dispatch([email, in_app], notifications))
 
@@ -131,9 +127,7 @@ def test_dispatch_sends_every_notification_on_every_channel():
 
 def test_dispatch_runs_deliveries_concurrently():
     log = []
-    notifications = build_notifications(
-        NotificationEvent.SUBMITTED, REQUEST, EMPLOYEE, MANAGER
-    )
+    notifications = build_notifications(NotificationEvent.SUBMITTED, REQUEST, EMPLOYEE, MANAGER)
 
     run(dispatch([SlowNotifier(log)], notifications))
 
@@ -143,9 +137,7 @@ def test_dispatch_runs_deliveries_concurrently():
 
 def test_one_failing_channel_does_not_stop_the_others():
     in_app = InAppNotifier()
-    notifications = build_notifications(
-        NotificationEvent.SUBMITTED, REQUEST, EMPLOYEE, MANAGER
-    )
+    notifications = build_notifications(NotificationEvent.SUBMITTED, REQUEST, EMPLOYEE, MANAGER)
 
     failures = run(dispatch([FailingNotifier(), in_app], notifications))
 

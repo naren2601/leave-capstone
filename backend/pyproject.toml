@@ -4,13 +4,20 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "leavedesk"
-version = "0.1.0"
+version = "0.2.0"
 description = "LeaveDesk: leave management backend"
-requires-python = ">=3.10"
-dependencies = ["pydantic>=2"]
+requires-python = ">=3.12"
+dependencies = [
+    "pydantic>=2.9,<3",
+    "fastapi>=0.115,<1",
+    "uvicorn[standard]>=0.32,<1",
+    "pydantic-settings>=2.6,<3",
+    "PyJWT>=2.9,<3",
+    "argon2-cffi>=23.1,<26",
+]
 
 [project.optional-dependencies]
-test = ["pytest"]
+test = ["pytest>=8,<10", "httpx>=0.27,<1", "ruff>=0.8,<1"]
 
 [tool.setuptools.packages.find]
 include = ["leavedesk*"]
@@ -18,3 +25,22 @@ include = ["leavedesk*"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+# E/W pycodestyle, F pyflakes, I import order, B bugbear, UP newer syntax,
+# S security checks, SIM simplifications
+select = ["E", "W", "F", "I", "B", "UP", "S", "SIM"]
+ignore = [
+    "B008",  # FastAPI uses function calls such as Depends() in defaults
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests use assert and fixed test passwords on purpose.
+"tests/**" = ["S101", "S105", "S106"]
+
+[tool.ruff.lint.flake8-bugbear]
+extend-immutable-calls = ["fastapi.Depends", "fastapi.Query"]

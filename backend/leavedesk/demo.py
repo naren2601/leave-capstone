@@ -51,9 +51,7 @@ def show_inbox(inbox: InAppNotifier, user_id: str, name: str) -> None:
 def build_service() -> tuple[LeaveService, InAppNotifier, EmailNotifier]:
     repo = InMemoryLeaveRepository()
     repo.add_employee(Manager(id="m1", name="Ravi", email="ravi@example.com"))
-    repo.add_employee(
-        Employee(id="e1", name="Asha", email="asha@example.com", manager_id="m1")
-    )
+    repo.add_employee(Employee(id="e1", name="Asha", email="asha@example.com", manager_id="m1"))
     inbox, email = InAppNotifier(), EmailNotifier()
     service = LeaveService(repo, notifiers=[email, inbox], today=lambda: TODAY)
     return service, inbox, email
@@ -88,8 +86,12 @@ async def happy_path(service: LeaveService, inbox: InAppNotifier, email: EmailNo
 
     print("\n5. Asha applies for a casual half-day (morning), Wed 25 Nov")
     half = await service.apply(
-        "e1", LeaveType.CASUAL, date(2026, 11, 25), date(2026, 11, 25),
-        "Bank work", DayPart.AM,
+        "e1",
+        LeaveType.CASUAL,
+        date(2026, 11, 25),
+        date(2026, 11, 25),
+        "Bank work",
+        DayPart.AM,
     )
     print(f"   {half.id} costs {half.days:g} days")
     show_balance(service, "e1", LeaveType.CASUAL)
@@ -118,32 +120,42 @@ async def edge_cases(service: LeaveService) -> int:
         (
             "EC-1 End date before start date",
             InvalidLeaveRequestError,
-            service.apply("e1", LeaveType.ANNUAL, date(2026, 12, 4),
-                          date(2026, 12, 1), "Wrong dates"),
+            service.apply(
+                "e1", LeaveType.ANNUAL, date(2026, 12, 4), date(2026, 12, 1), "Wrong dates"
+            ),
         ),
         (
             "EC-2 Only weekend days (Sat 28 to Sun 29 Nov)",
             InvalidLeaveRequestError,
-            service.apply("e1", LeaveType.ANNUAL, date(2026, 11, 28),
-                          date(2026, 11, 29), "Weekend trip"),
+            service.apply(
+                "e1", LeaveType.ANNUAL, date(2026, 11, 28), date(2026, 11, 29), "Weekend trip"
+            ),
         ),
         (
             "EC-3 Overlaps the approved leave on 16 to 18 Nov",
             OverlappingLeaveError,
-            service.apply("e1", LeaveType.ANNUAL, date(2026, 11, 17),
-                          date(2026, 11, 19), "Extend my trip"),
+            service.apply(
+                "e1", LeaveType.ANNUAL, date(2026, 11, 17), date(2026, 11, 19), "Extend my trip"
+            ),
         ),
         (
             "EC-4 Annual leave for 20 working days with 15 left",
             InsufficientBalanceError,
-            service.apply("e1", LeaveType.ANNUAL, date(2026, 12, 1),
-                          date(2026, 12, 28), "Long holiday"),
+            service.apply(
+                "e1", LeaveType.ANNUAL, date(2026, 12, 1), date(2026, 12, 28), "Long holiday"
+            ),
         ),
         (
             "EC-5 Half-day spanning two dates",
             InvalidLeaveRequestError,
-            service.apply("e1", LeaveType.CASUAL, date(2026, 11, 26),
-                          date(2026, 11, 27), "Two half-days", DayPart.PM),
+            service.apply(
+                "e1",
+                LeaveType.CASUAL,
+                date(2026, 11, 26),
+                date(2026, 11, 27),
+                "Two half-days",
+                DayPart.PM,
+            ),
         ),
     ]
 

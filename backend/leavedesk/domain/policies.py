@@ -35,7 +35,7 @@ class LeaveBalance:
         self._check_positive(days)
         if days > self.available:
             raise InsufficientBalanceError(
-                f"requested {days} days but only {self.available} available"
+                f"requested {days:g} days but only {self.available:g} available"
             )
         self.pending += days
 
@@ -74,8 +74,7 @@ class LeavePolicy(ABC):
         """Raise PolicyViolationError if the request breaks a rule."""
         if request.leave_type is not self.leave_type:
             raise PolicyViolationError(
-                f"{type(self).__name__} cannot check "
-                f"{request.leave_type.value} leave"
+                f"{type(self).__name__} cannot check {request.leave_type.value} leave"
             )
         self.check_rules(request, today)
 
@@ -106,8 +105,7 @@ class SickLeavePolicy(LeavePolicy):
         earliest_start = today - timedelta(days=self.max_backdate_days)
         if request.start_date < earliest_start:
             raise PolicyViolationError(
-                f"sick leave can be backdated by at most "
-                f"{self.max_backdate_days} days"
+                f"sick leave can be backdated by at most {self.max_backdate_days} days"
             )
 
 
@@ -122,8 +120,7 @@ class CasualLeavePolicy(LeavePolicy):
         # request.days must already be set by the service.
         if request.days > self.max_days_per_request:
             raise PolicyViolationError(
-                f"casual leave is at most {self.max_days_per_request} "
-                f"working days per request"
+                f"casual leave is at most {self.max_days_per_request} working days per request"
             )
 
 

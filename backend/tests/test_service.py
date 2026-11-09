@@ -50,12 +50,8 @@ def repo():
     repo = InMemoryLeaveRepository()
     repo.add_employee(Manager(id="m1", name="Ravi", email="ravi@example.com"))
     repo.add_employee(Manager(id="m2", name="Meena", email="meena@example.com"))
-    repo.add_employee(
-        Employee(id="e1", name="Asha", email="asha@example.com", manager_id="m1")
-    )
-    repo.add_employee(
-        Employee(id="e2", name="Kiran", email="kiran@example.com", manager_id="m2")
-    )
+    repo.add_employee(Employee(id="e1", name="Asha", email="asha@example.com", manager_id="m1"))
+    repo.add_employee(Employee(id="e2", name="Kiran", email="kiran@example.com", manager_id="m2"))
     repo.add_employee(Employee(id="solo", name="Sam", email="sam@example.com"))
     return repo
 
@@ -70,12 +66,16 @@ def service(repo, inbox):
     return LeaveService(repo, notifiers=[inbox], today=lambda: TODAY)
 
 
-def apply(service, employee_id="e1", leave_type=LeaveType.ANNUAL,
-          start=NEXT_MONDAY, end=NEXT_WEDNESDAY, reason="Family trip",
-          day_part=DayPart.FULL):
-    return run(
-        service.apply(employee_id, leave_type, start, end, reason, day_part)
-    )
+def apply(
+    service,
+    employee_id="e1",
+    leave_type=LeaveType.ANNUAL,
+    start=NEXT_MONDAY,
+    end=NEXT_WEDNESDAY,
+    reason="Family trip",
+    day_part=DayPart.FULL,
+):
+    return run(service.apply(employee_id, leave_type, start, end, reason, day_part))
 
 
 def available(service, employee_id="e1", leave_type=LeaveType.ANNUAL):
@@ -145,9 +145,7 @@ def test_weekend_only_request_raises(service):
 
 
 def test_half_day_costs_half(service):
-    request = apply(
-        service, start=NEXT_MONDAY, end=NEXT_MONDAY, day_part=DayPart.AM
-    )
+    request = apply(service, start=NEXT_MONDAY, end=NEXT_MONDAY, day_part=DayPart.AM)
 
     assert request.days == 0.5
     assert available(service) == 17.5
@@ -180,9 +178,7 @@ def test_dates_of_rejected_request_can_be_reused(service):
 def test_am_and_pm_on_same_day_do_not_clash(service):
     apply(service, start=NEXT_MONDAY, end=NEXT_MONDAY, day_part=DayPart.AM)
 
-    afternoon = apply(
-        service, start=NEXT_MONDAY, end=NEXT_MONDAY, day_part=DayPart.PM
-    )
+    afternoon = apply(service, start=NEXT_MONDAY, end=NEXT_MONDAY, day_part=DayPart.PM)
 
     assert afternoon.days == 0.5
 
@@ -199,8 +195,9 @@ def test_apply_reserves_pending_days(service):
 
 def test_insufficient_balance_raises_and_changes_nothing(service, repo):
     with pytest.raises(InsufficientBalanceError):
-        apply(service, leave_type=LeaveType.SICK,
-              start=NEXT_MONDAY, end=date(2026, 12, 4))  # 15 working days
+        apply(
+            service, leave_type=LeaveType.SICK, start=NEXT_MONDAY, end=date(2026, 12, 4)
+        )  # 15 working days
 
     assert available(service, leave_type=LeaveType.SICK) == 10
     assert repo.requests_for("e1") == []
@@ -208,12 +205,10 @@ def test_insufficient_balance_raises_and_changes_nothing(service, repo):
 
 def test_pending_days_count_against_new_requests(service):
     # Sick leave has 10 days. Reserve 5, then ask for 6 more.
-    apply(service, leave_type=LeaveType.SICK,
-          start=NEXT_MONDAY, end=NEXT_FRIDAY)
+    apply(service, leave_type=LeaveType.SICK, start=NEXT_MONDAY, end=NEXT_FRIDAY)
 
     with pytest.raises(InsufficientBalanceError):
-        apply(service, leave_type=LeaveType.SICK,
-              start=date(2026, 11, 23), end=date(2026, 11, 30))
+        apply(service, leave_type=LeaveType.SICK, start=date(2026, 11, 23), end=date(2026, 11, 30))
 
 
 # FR-5 Approve
@@ -368,9 +363,7 @@ def test_cancel_notifies_employee_and_manager(service, inbox):
 
 
 def test_failed_notification_does_not_undo_the_action(repo, inbox):
-    service = LeaveService(
-        repo, notifiers=[FailingNotifier(), inbox], today=lambda: TODAY
-    )
+    service = LeaveService(repo, notifiers=[FailingNotifier(), inbox], today=lambda: TODAY)
 
     request = apply(service)
 

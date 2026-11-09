@@ -1,7 +1,7 @@
 """Working-day calculation and overlap detection for LeaveDesk."""
 
+from collections.abc import Iterable
 from datetime import date, timedelta
-from typing import Iterable, Optional
 
 from leavedesk.domain.exceptions import InvalidLeaveRequestError
 from leavedesk.domain.models import DayPart, LeaveRequest, LeaveStatus
@@ -31,9 +31,7 @@ def working_days(start: date, end: date) -> int:
     return count
 
 
-def count_leave_days(
-    start: date, end: date, day_part: DayPart = DayPart.FULL
-) -> float:
+def count_leave_days(start: date, end: date, day_part: DayPart = DayPart.FULL) -> float:
     """Return how many days a request costs: 0.5 for a half-day.
 
     Raises InvalidLeaveRequestError if the range has no working days,
@@ -41,9 +39,7 @@ def count_leave_days(
     """
     days = working_days(start, end)
     if days == 0:
-        raise InvalidLeaveRequestError(
-            "the dates contain no working days, only a weekend"
-        )
+        raise InvalidLeaveRequestError("the dates contain no working days, only a weekend")
 
     if day_part is DayPart.FULL:
         return float(days)
@@ -52,27 +48,19 @@ def count_leave_days(
 
 def requests_overlap(first: LeaveRequest, second: LeaveRequest) -> bool:
     """Return True if the two requests use any of the same time."""
-    dates_touch = (
-        first.start_date <= second.end_date
-        and second.start_date <= first.end_date
-    )
+    dates_touch = first.start_date <= second.end_date and second.start_date <= first.end_date
     if not dates_touch:
         return False
 
     # AM and PM on the same date do not clash. Any other mix does.
-    both_half_days = (
-        first.day_part is not DayPart.FULL
-        and second.day_part is not DayPart.FULL
-    )
-    if both_half_days and first.day_part is not second.day_part:
-        return False
-
-    return True
+    both_half_days = first.day_part is not DayPart.FULL and second.day_part is not DayPart.FULL
+    opposite_halves = both_half_days and first.day_part is not second.day_part
+    return not opposite_halves
 
 
 def find_overlap(
     new_request: LeaveRequest, existing: Iterable[LeaveRequest]
-) -> Optional[LeaveRequest]:
+) -> LeaveRequest | None:
     """Return the first active request by the same employee that clashes."""
     for other in existing:
         if other.id == new_request.id:

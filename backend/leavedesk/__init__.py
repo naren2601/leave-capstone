@@ -1,1 +1,0 @@
-"""LeaveDesk backend package."""

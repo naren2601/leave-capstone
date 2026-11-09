@@ -60,9 +60,24 @@ def test_timed_records_elapsed_time(caplog):
 def test_timed_still_records_when_an_error_happens(caplog):
     caplog.set_level(logging.INFO, logger="leavedesk")
 
-    with pytest.raises(ValueError):
-        with timed("broken step") as timer:
-            raise ValueError("boom")
+    with pytest.raises(ValueError), timed("broken step") as timer:
+        raise ValueError("boom")
 
     assert timer.elapsed_ms >= 0
     assert "TIMER broken step took" in caplog.text
+
+
+class Clinic:
+    @audit
+    def book(self, patient, reason, password=None):
+        return "booked"
+
+
+def test_audit_never_logs_free_text_or_passwords(caplog):
+    caplog.set_level(logging.INFO, logger="leavedesk")
+
+    Clinic().book("e1", "fever and migraine", password="s3cret")
+
+    assert "fever" not in caplog.text
+    assert "s3cret" not in caplog.text
+    assert "Clinic.book('e1', <redacted>, password=<redacted>) -> OK" in caplog.text

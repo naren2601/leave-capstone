@@ -10,7 +10,14 @@ class LeaveDeskError(Exception):
 
 
 class InvalidLeaveRequestError(LeaveDeskError):
-    """The request data is invalid, such as bad dates or a short reason."""
+    """The request data is invalid, such as bad dates or a short reason.
+
+    details optionally lists each problem as {"field": ..., "problem": ...}.
+    """
+
+    def __init__(self, message: str, details: list[dict] | None = None) -> None:
+        super().__init__(message)
+        self.details = details or []
 
 
 class PolicyViolationError(LeaveDeskError):

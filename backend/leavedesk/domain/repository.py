@@ -6,7 +6,6 @@ version can later be swapped for a database without changing the service.
 
 from abc import ABC, abstractmethod
 from itertools import count
-from typing import Optional
 
 from leavedesk.domain.exceptions import NotFoundError
 from leavedesk.domain.models import Employee, LeaveRequest, LeaveType
@@ -21,6 +20,9 @@ class LeaveRepository(ABC):
     def get_employee(self, employee_id: str) -> Employee: ...
 
     @abstractmethod
+    def list_employees(self) -> list[Employee]: ...
+
+    @abstractmethod
     def next_request_id(self) -> str: ...
 
     @abstractmethod
@@ -33,9 +35,7 @@ class LeaveRepository(ABC):
     def requests_for(self, employee_id: str) -> list[LeaveRequest]: ...
 
     @abstractmethod
-    def find_balance(
-        self, employee_id: str, leave_type: LeaveType
-    ) -> Optional[LeaveBalance]: ...
+    def find_balance(self, employee_id: str, leave_type: LeaveType) -> LeaveBalance | None: ...
 
     @abstractmethod
     def save_balance(self, balance: LeaveBalance) -> None: ...
@@ -59,6 +59,9 @@ class InMemoryLeaveRepository(LeaveRepository):
         except KeyError:
             raise NotFoundError(f"no employee with id {employee_id}") from None
 
+    def list_employees(self) -> list[Employee]:
+        return list(self._employees.values())
+
     def next_request_id(self) -> str:
         return f"LR-{next(self._ids)}"
 
@@ -73,14 +76,10 @@ class InMemoryLeaveRepository(LeaveRepository):
 
     def requests_for(self, employee_id: str) -> list[LeaveRequest]:
         return [
-            request
-            for request in self._requests.values()
-            if request.employee_id == employee_id
+            request for request in self._requests.values() if request.employee_id == employee_id
         ]
 
-    def find_balance(
-        self, employee_id: str, leave_type: LeaveType
-    ) -> Optional[LeaveBalance]:
+    def find_balance(self, employee_id: str, leave_type: LeaveType) -> LeaveBalance | None:
         return self._balances.get((employee_id, leave_type))
 
     def save_balance(self, balance: LeaveBalance) -> None:
