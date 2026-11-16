@@ -1,5 +1,9 @@
 """SQLAlchemy 2 models for LeaveDesk. See SCHEMA.md for the reasons behind each choice.
 
+Relationships are view-only and use lazy="raise": related rows must be loaded
+explicitly (for example with selectinload), so an accidental N+1 query fails
+loudly instead of quietly running one query per row.
+
 Rules that apply to every table:
 - Every business table has tenant_id, and foreign keys between business tables
   include tenant_id, so a row can never point at another tenant's row.
@@ -36,7 +40,7 @@ from sqlalchemy import (
     text,
 )
 from sqlalchemy.dialects.postgresql import JSONB, TSRANGE, UUID, ExcludeConstraint
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 from leavedesk.db.ids import uuid7
 
@@ -145,6 +149,14 @@ class Employee(Base):
         CheckConstraint("btrim(code) <> ''", name="code_not_blank"),
         CheckConstraint("btrim(name) <> ''", name="name_not_blank"),
         CheckConstraint(r"email ~ '^[^@\s]+@[^@\s]+\.[^@\s]+$'", name="email_format"),
+    )
+
+    manager: Mapped["Employee | None"] = relationship(
+        primaryjoin="and_(Employee.manager_id == remote(Employee.id),"
+        " Employee.tenant_id == remote(Employee.tenant_id))",
+        foreign_keys="[Employee.manager_id, Employee.tenant_id]",
+        viewonly=True,
+        lazy="raise",
     )
 
 
@@ -279,6 +291,21 @@ class LeaveRequest(Base):
             using="gist",
             where=text(_in("status", ACTIVE_STATUSES)),
         ),
+    )
+
+    employee: Mapped[Employee] = relationship(
+        primaryjoin="and_(LeaveRequest.employee_id == Employee.id,"
+        " LeaveRequest.tenant_id == Employee.tenant_id)",
+        foreign_keys="[LeaveRequest.employee_id, LeaveRequest.tenant_id]",
+        viewonly=True,
+        lazy="raise",
+    )
+    leave_type: Mapped[LeaveType] = relationship(
+        primaryjoin="and_(LeaveRequest.leave_type_id == LeaveType.id,"
+        " LeaveRequest.tenant_id == LeaveType.tenant_id)",
+        foreign_keys="[LeaveRequest.leave_type_id, LeaveRequest.tenant_id]",
+        viewonly=True,
+        lazy="raise",
     )
 
     # Optimistic locking: every UPDATE checks and increments version.
