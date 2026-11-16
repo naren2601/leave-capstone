@@ -7,6 +7,7 @@ and everyone involved is notified.
 |---|---|---|
 | 1 | Domain core in plain Python | [SPEC.md](SPEC.md) |
 | 2 | REST API with FastAPI, JWT login, live notifications, Docker | [API_SPEC.md](API_SPEC.md) |
+| 3 | PostgreSQL with SQLAlchemy 2 and Alembic (in progress) | [SCHEMA.md](SCHEMA.md) |
 
 ## Requirements
 
@@ -96,6 +97,62 @@ docker compose up --build
 This starts the API on <http://localhost:8000/docs> and a PostgreSQL database
 (not used until Day 3). Stop it with `Ctrl+C`, then `docker compose down`.
 
+## Database (Day 3)
+
+Day 3 is in progress: the schema and migrations are done, and the API still uses
+in-memory storage until the PostgreSQL repository is added.
+
+Start PostgreSQL with Docker, then create the tables:
+
+```bash
+docker compose up -d db
+alembic upgrade head
+```
+
+`alembic` reads `LEAVEDESK_DATABASE_URL` from your environment. In PowerShell, set it for
+the current terminal with:
+
+```powershell
+$env:LEAVEDESK_DATABASE_URL = "postgresql+psycopg://leavedesk:<password>@localhost:5432/leavedesk"
+```
+
+Useful commands:
+
+```bash
+alembic current             # which migration the database is on
+alembic downgrade -1        # undo the latest migration
+alembic upgrade head --sql  # print the SQL without running it
+```
+
+### Database tests
+
+Tests in `tests/db/` run against a real PostgreSQL. Each run creates its own temporary
+database, applies every migration, and drops it afterwards. Set
+`LEAVEDESK_TEST_DATABASE_URL` to enable them; without it they are skipped.
+
+```powershell
+$env:LEAVEDESK_TEST_DATABASE_URL = "postgresql+psycopg://leavedesk:<password>@localhost:5432/postgres"
+python -m pytest tests/db
+```
+
+### Windows security ("An Application Control policy has blocked this file")
+
+Some Windows laptops block compiled files that come inside Python packages. If you see
+that error, two packages need a workaround. Run these from `backend` with the venv active:
+
+```powershell
+# SQLAlchemy: reinstall without its compiled speed-ups (plain Python, same behaviour)
+$env:DISABLE_SQLALCHEMY_CEXT = "1"
+python -m pip install --force-reinstall --no-deps --no-binary sqlalchemy "SQLAlchemy>=2.0.36,<3"
+
+# psycopg: use pg8000 instead, a driver written entirely in Python
+python -m pip install -r requirements-dev.txt
+```
+
+Then write `postgresql+pg8000://` instead of `postgresql+psycopg://` at the start of
+`LEAVEDESK_DATABASE_URL` and `LEAVEDESK_TEST_DATABASE_URL`. Everything else stays the same,
+and the full test suite passes with either driver. Docker always uses psycopg.
+
 ## Run the Day 1 demo
 
 ```bash
@@ -126,6 +183,9 @@ backend/
 │   │   ├── service.py          LeaveService: apply, approve, reject, cancel
 │   │   ├── instrumentation.py  @audit decorator and timed() context manager
 │   │   └── notifications.py    Notifier, email and in-app notifiers
+│   ├── db/                     Day 3 PostgreSQL storage
+│   │   ├── models.py           SQLAlchemy models: every table, constraint and index
+│   │   └── ids.py              UUIDv7 ids
 │   └── api/                    Day 2 REST API
 │       ├── main.py             App factory: create_app()
 │       ├── settings.py         Settings from environment variables
@@ -136,7 +196,9 @@ backend/
 │       ├── state.py            Shared objects and demo users
 │       ├── schemas.py          Request and response bodies
 │       └── routes/             auth, leave and notification endpoints
-├── tests/                      Domain tests, and API tests in tests/api/
+├── migrations/                 Alembic migrations (schema changes only go here)
+├── alembic.ini
+├── tests/                      Domain tests, API tests in tests/api/, database tests in tests/db/
 ├── Dockerfile
 ├── docker-compose.yml
 ├── .env.example
