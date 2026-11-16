@@ -40,6 +40,15 @@ class LeaveRepository(ABC):
     @abstractmethod
     def save_balance(self, balance: LeaveBalance) -> None: ...
 
+    def save_changes(self, request: LeaveRequest, balance: LeaveBalance) -> None:
+        """Save a request and the balance it changed, as one unit.
+
+        A database repository overrides this so it can record the balance change
+        in its ledger, linked to the request that caused it.
+        """
+        self.save_balance(balance)
+        self.save_request(request)
+
 
 class InMemoryLeaveRepository(LeaveRepository):
     """Keeps everything in dictionaries. Data is lost when the program ends."""

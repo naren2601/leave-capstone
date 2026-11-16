@@ -45,10 +45,13 @@ employees          id, tenant_id → tenants, code, name, email, is_manager,
 
 users              employee_id → employees PK, tenant_id, password_hash,
                    failed_login_count, locked_until timestamptz NULL, last_login_at
+                   CHECK (password_hash LIKE '$argon2id$%')     -- never a plain password
 
 leave_types        id, tenant_id, code, name, days_per_year numeric(5,1),
-                   notice_days, max_backdate_days, max_days_per_request
+                   min_start_offset_days, max_days_per_request numeric(5,1) NULL
                    UNIQUE (tenant_id, code)
+                   -- min_start_offset_days: earliest start in days from today.
+                   --   Annual 3 (three days' notice), Sick -7 (backdate a week), Casual 0.
 
 leave_requests     id uuid, tenant_id, employee_id → employees, leave_type_id → leave_types,
                    start_date date, end_date date, day_part, reason, status,
@@ -107,8 +110,8 @@ without it, deleting or updating a parent row scans the whole child table.
 
 ### Leave type: a lookup table. Status and day part: CHECK constraints
 
-- **Leave type is a lookup table** because each type carries data: days per year, notice
-  days, backdate limit, and the per-request maximum. A tenant can add or change a type with
+- **Leave type is a lookup table** because each type carries data: days per year, how far
+  ahead or back a request may start, and the per-request maximum. A tenant can add or change a type with
   an `INSERT` or `UPDATE`, without a migration.
 - **Status and day part are `CHECK` constraints** on `text`. The values are fixed by the code's
   state machine, so a new value always needs a code change anyway. CHECK is easier to change
@@ -238,7 +241,7 @@ which reads only the rows on the page instead of skipping over every earlier row
 
 | # | Task | Part |
 |---|---|---|
-| 1 | SQLAlchemy models and the first Alembic revision (tables, constraints, EXCLUDE, triggers, roles) | A |
+| 1 | SQLAlchemy models and the first Alembic revision (tables, constraints, EXCLUDE, triggers) | A |
 | 2 | `PostgresLeaveRepository` and one session per request; Day 2 tests running on PostgreSQL | A |
 | 3 | Ledger-based balances, row locks, version column, idempotency key | C |
 | 4 | Notifications, outbox, worker, LISTEN/NOTIFY for SSE | C2 |

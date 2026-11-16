@@ -53,6 +53,14 @@ class LeaveService:
         self.today = today
         self.sent: list[Notification] = []
 
+    def using(self, repository: LeaveRepository) -> "LeaveService":
+        """A copy of this service that works on another repository.
+
+        The API makes one per request, so each request uses its own database
+        session while sharing the same policies, notifiers and clock.
+        """
+        return LeaveService(repository, self.policies, self.notifiers, self.today)
+
     # Public actions
 
     @audit
@@ -202,8 +210,7 @@ class LeaveService:
         return request, employee
 
     def _save(self, request: LeaveRequest, balance: LeaveBalance) -> None:
-        self.repository.save_balance(balance)
-        self.repository.save_request(request)
+        self.repository.save_changes(request, balance)
 
     async def _notify(
         self,

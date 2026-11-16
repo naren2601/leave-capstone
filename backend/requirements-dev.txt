@@ -3,3 +3,6 @@
 pytest>=8,<10
 httpx>=0.27,<1
 ruff>=0.8,<1
+# Pure-Python PostgreSQL driver. Only needed on Windows machines where security
+# policy blocks psycopg's compiled file; use postgresql+pg8000:// URLs there.
+pg8000>=1.31,<2
