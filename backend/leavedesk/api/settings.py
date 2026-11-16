@@ -22,7 +22,7 @@ class Settings(BaseSettings):
     access_token_minutes: int = Field(default=30, ge=1, le=24 * 60)
 
     # Password for the demo users created at startup. Dev only.
-    seed_password: SecretStr = Field(min_length=8)
+    seed_password: SecretStr = Field(min_length=6)
 
     sse_keepalive_seconds: float = Field(default=15, gt=0)
 
