@@ -8,7 +8,8 @@ Then open http://localhost:8000/docs
 """
 
 import logging
-from collections.abc import Callable
+from collections.abc import AsyncIterator, Callable
+from contextlib import asynccontextmanager
 from datetime import date
 
 from fastapi import FastAPI
@@ -18,6 +19,17 @@ from leavedesk.api.middleware import RequestContextMiddleware
 from leavedesk.api.routes import auth, leave, notifications
 from leavedesk.api.settings import Settings, get_settings
 from leavedesk.api.state import build_state
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    """Start the LISTEN thread and outbox worker (PostgreSQL mode), stop them at shutdown."""
+    state = app.state.leavedesk
+    await state.start_background_work()
+    try:
+        yield
+    finally:
+        await state.stop_background_work()
 
 
 def create_app(settings: Settings | None = None, today: Callable[[], date] = date.today) -> FastAPI:
@@ -33,6 +45,7 @@ def create_app(settings: Settings | None = None, today: Callable[[], date] = dat
         # Hide the interactive docs in production.
         docs_url="/docs" if settings.environment == "dev" else None,
         redoc_url=None,
+        lifespan=lifespan,
     )
     app.state.leavedesk = build_state(settings, today)
 

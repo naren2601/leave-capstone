@@ -1,9 +1,16 @@
 """Shared fixtures for the API tests.
 
-Each test gets a fresh app with in-memory data, a fixed "today", and a
-recording notifier standing in for real delivery.
+Each test gets a fresh app, a fixed "today", and a recording notifier standing in
+for real delivery. Every test runs twice:
+
+- [memory]   storage in memory, as on Day 2;
+- [postgres] storage in PostgreSQL (Day 3), each test with its own tenant, so tests
+             never see each other's data. Skipped without LEAVEDESK_TEST_DATABASE_URL.
+
+The test files themselves are unchanged from Day 2.
 """
 
+import uuid
 from datetime import date
 
 import pytest
@@ -13,6 +20,7 @@ from leavedesk.api.auth import create_access_token
 from leavedesk.api.main import create_app
 from leavedesk.api.settings import Settings
 from leavedesk.domain.notifications import Notification, Notifier
+from tests.postgres import requires_postgres
 
 TODAY = date(2026, 11, 9)  # a Monday
 PASSWORD = "test-password-123"
@@ -32,18 +40,32 @@ class RecordingNotifier(Notifier):
         self.sent.append(notification)
 
 
+@pytest.fixture(params=["memory", pytest.param("postgres", marks=requires_postgres)])
+def backend(request) -> str:
+    return request.param
+
+
 @pytest.fixture
-def settings() -> Settings:
+def settings(backend, request) -> Settings:
+    database = {}
+    if backend == "postgres":
+        database = {
+            "database_url": request.getfixturevalue("database_url"),
+            "tenant_name": f"Test tenant {uuid.uuid4().hex[:8]}",
+        }
     return Settings(
         jwt_secret="test-secret-that-is-at-least-32-characters",
         seed_password=PASSWORD,
         _env_file=None,
+        **database,
     )
 
 
 @pytest.fixture
 def app(settings):
-    return create_app(settings, today=lambda: TODAY)
+    app = create_app(settings, today=lambda: TODAY)
+    yield app
+    app.state.leavedesk.close()
 
 
 @pytest.fixture

@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import StrEnum
 
+from leavedesk.domain.exceptions import NotFoundError
 from leavedesk.domain.models import Employee, LeaveRequest
 
 logger = logging.getLogger("leavedesk")
@@ -93,6 +94,31 @@ class InAppNotifier(Notifier):
         for notification in unread:
             notification.mark_read()
         return len(unread)
+
+    # The same methods as PostgresInbox (Day 3), so routes work with either.
+
+    def save(self, notifications: list[Notification]) -> None:
+        for notification in notifications:
+            self._inboxes.setdefault(notification.recipient, []).append(notification)
+
+    def page(
+        self, recipient: str, unread: bool, limit: int, offset: int
+    ) -> tuple[list[Notification], int]:
+        """One page of a user's notifications, unread first, then newest first."""
+        notifications = self.inbox(recipient)
+        if unread:
+            notifications = [n for n in notifications if not n.read]
+        notifications.sort(key=lambda n: n.created_at, reverse=True)
+        notifications.sort(key=lambda n: n.read)
+        return notifications[offset : offset + limit], len(notifications)
+
+    def mark_read(self, notification_id: str, recipient: str) -> Notification:
+        notification = self.find(notification_id)
+        # Someone else's notification gets the same 404 as a missing one.
+        if notification is None or notification.recipient != recipient:
+            raise NotFoundError(f"no notification with id {notification_id}")
+        notification.mark_read()
+        return notification
 
 
 def build_notifications(

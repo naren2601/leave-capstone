@@ -1,6 +1,6 @@
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, status
+from fastapi import APIRouter, BackgroundTasks, Header, HTTPException, Query, Response, status
 
 from leavedesk.api.auth import CurrentUser, ManagerUser, User
 from leavedesk.api.schemas import (
@@ -12,9 +12,11 @@ from leavedesk.api.schemas import (
 )
 from leavedesk.api.state import AppState, State, Store, StoreDep
 from leavedesk.domain.exceptions import (
+    InvalidLeaveRequestError,
     InvalidTransitionError,
     NotAuthorizedError,
     NotFoundError,
+    VersionConflictError,
 )
 from leavedesk.domain.models import LeaveRequest, LeaveStatus, LeaveType
 from leavedesk.domain.notifications import Notification
@@ -41,9 +43,61 @@ def load_visible_request(store: Store, user: CurrentUser, request_id: str) -> Le
     return request
 
 
-def send_later(background: BackgroundTasks, state: AppState, outbox: list[Notification]):
+def send_later(
+    background: BackgroundTasks, state: AppState, store: Store, outbox: list[Notification]
+):
+    """Save in-app notifications with the change, then send the rest after the commit."""
     if outbox:
+        store.inbox.save(outbox)  # same transaction as the change: both or neither
         background.add_task(state.send_notifications, outbox)
+
+
+# Safe changes: optimistic locking and idempotency
+
+IfMatch = Annotated[
+    str | None,
+    Header(
+        alias="If-Match",
+        description="The request's version, from its `version` field or `ETag` header. "
+        "If someone changed the request since, the API answers 409 VERSION_CONFLICT.",
+    ),
+]
+IdempotencyKey = Annotated[
+    str | None,
+    Header(
+        alias="Idempotency-Key",
+        min_length=1,
+        max_length=200,
+        description="Any unique text, such as a UUID. Retrying with the same key returns "
+        "the first result instead of creating a second request.",
+    ),
+]
+
+
+def expected_version(if_match: str | None) -> int | None:
+    """Read If-Match. Accepts 3, "3" or W/"3" (how browsers send ETags back)."""
+    if if_match is None:
+        return None
+    value = if_match.strip().removeprefix("W/").strip('"')
+    if not value.isdigit():
+        raise InvalidLeaveRequestError("If-Match must be the request's version number")
+    return int(value)
+
+
+def tag(response: Response, request: LeaveRequest) -> LeaveRequest:
+    """Send the version back as an ETag, ready to use as the next If-Match."""
+    response.headers["ETag"] = f'"{request.version}"'
+    return request
+
+
+def same_request(request: LeaveRequest, body: ApplyLeaveIn) -> bool:
+    return (
+        request.leave_type is body.leave_type
+        and request.start_date == body.start_date
+        and request.end_date == body.end_date
+        and request.day_part is body.day_part
+        and request.reason == body.reason.strip()
+    )
 
 
 # Balance
@@ -84,7 +138,19 @@ async def apply_for_leave(
     state: State,
     store: StoreDep,
     background: BackgroundTasks,
+    response: Response,
+    idempotency_key: IdempotencyKey = None,
 ) -> LeaveRequest:
+    if idempotency_key is not None:
+        first = store.repository.find_by_idempotency_key(user.id, idempotency_key)
+        if first is not None:
+            if not same_request(first, body):
+                raise InvalidLeaveRequestError(
+                    "this Idempotency-Key was already used for a different request"
+                )
+            response.headers["Idempotent-Replayed"] = "true"
+            return tag(response, first)
+
     outbox: list[Notification] = []
     request = await store.service.apply(
         user.id,
@@ -95,8 +161,10 @@ async def apply_for_leave(
         body.day_part,
         outbox=outbox,
     )
-    send_later(background, state, outbox)
-    return request
+    if idempotency_key is not None:
+        store.repository.remember_idempotency_key(user.id, idempotency_key, request.id)
+    send_later(background, state, store, outbox)
+    return tag(response, request)
 
 
 @router.get("/leave-requests", response_model=Page[LeaveRequestOut])
@@ -129,8 +197,10 @@ def list_leave_requests(
 
 
 @router.get("/leave-requests/{request_id}", response_model=LeaveRequestOut)
-def get_leave_request(request_id: str, user: User, store: StoreDep) -> LeaveRequest:
-    return load_visible_request(store, user, request_id)
+def get_leave_request(
+    request_id: str, user: User, store: StoreDep, response: Response
+) -> LeaveRequest:
+    return tag(response, load_visible_request(store, user, request_id))
 
 
 @router.post("/leave-requests/{request_id}/approve", response_model=LeaveRequestOut)
@@ -140,11 +210,15 @@ async def approve_leave(
     state: State,
     store: StoreDep,
     background: BackgroundTasks,
+    response: Response,
+    if_match: IfMatch = None,
 ) -> LeaveRequest:
     outbox: list[Notification] = []
-    request = await store.service.approve(request_id, user.id, outbox=outbox)
-    send_later(background, state, outbox)
-    return request
+    request = await store.service.approve(
+        request_id, user.id, outbox=outbox, expected_version=expected_version(if_match)
+    )
+    send_later(background, state, store, outbox)
+    return tag(response, request)
 
 
 @router.post("/leave-requests/{request_id}/reject", response_model=LeaveRequestOut)
@@ -155,11 +229,19 @@ async def reject_leave(
     state: State,
     store: StoreDep,
     background: BackgroundTasks,
+    response: Response,
+    if_match: IfMatch = None,
 ) -> LeaveRequest:
     outbox: list[Notification] = []
-    request = await store.service.reject(request_id, user.id, body.reason, outbox=outbox)
-    send_later(background, state, outbox)
-    return request
+    request = await store.service.reject(
+        request_id,
+        user.id,
+        body.reason,
+        outbox=outbox,
+        expected_version=expected_version(if_match),
+    )
+    send_later(background, state, store, outbox)
+    return tag(response, request)
 
 
 @router.delete("/leave-requests/{request_id}", response_model=LeaveRequestOut)
@@ -169,10 +251,17 @@ async def cancel_leave(
     state: State,
     store: StoreDep,
     background: BackgroundTasks,
+    response: Response,
+    if_match: IfMatch = None,
 ) -> LeaveRequest:
     request = store.repository.get_request(request_id)  # NotFoundError -> 404
     if request.employee_id != user.id:
         raise NotAuthorizedError("only the owner can cancel a request")
+    version = expected_version(if_match)
+    if version is not None and version != request.version:
+        raise VersionConflictError(
+            f"request {request.id} is at version {request.version}, not {version}"
+        )
     if request.status is not LeaveStatus.PENDING:
         # The API only cancels pending requests, as the approved spec says.
         raise InvalidTransitionError(
@@ -180,6 +269,8 @@ async def cancel_leave(
         )
 
     outbox: list[Notification] = []
-    request = await store.service.cancel(request_id, user.id, outbox=outbox)
-    send_later(background, state, outbox)
-    return request
+    request = await store.service.cancel(
+        request_id, user.id, outbox=outbox, expected_version=version
+    )
+    send_later(background, state, store, outbox)
+    return tag(response, request)

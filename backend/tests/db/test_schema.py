@@ -17,7 +17,7 @@ from leavedesk.db.models import (
     Tenant,
     User,
 )
-from tests.db.conftest import alembic_config, requires_postgres, temporary_database
+from tests.postgres import alembic_config, requires_postgres, temporary_database
 
 pytestmark = requires_postgres
 

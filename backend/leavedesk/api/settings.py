@@ -33,6 +33,11 @@ class Settings(BaseSettings):
     # Log every SQL statement, to spot N+1 queries while developing.
     database_echo: bool = False
 
+    # Step 4: the outbox worker sends pending emails this often, and gives up on
+    # one after this many failed attempts (it is then marked FAILED).
+    outbox_poll_seconds: float = Field(default=5, gt=0)
+    outbox_max_attempts: int = Field(default=5, ge=1)
+
 
 @lru_cache
 def get_settings() -> Settings:

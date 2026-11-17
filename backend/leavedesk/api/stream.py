@@ -31,6 +31,10 @@ class NotificationBroker(Notifier):
         return len(self._subscribers.get(recipient, ()))
 
     async def send(self, notification: Notification) -> None:
+        self.publish(notification)
+
+    def publish(self, notification: Notification) -> None:
+        """Push to every open stream of the recipient. Call from the event loop."""
         for queue in self._subscribers.get(notification.recipient, set()).copy():
             queue.put_nowait(notification)
 

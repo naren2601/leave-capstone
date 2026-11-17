@@ -52,6 +52,7 @@ class LeaveRequestOut(BaseModel):
     status: LeaveStatus
     days: float
     decision_note: str | None
+    version: int  # send it back as If-Match to approve, reject or cancel safely
 
 
 class BalanceOut(BaseModel):
