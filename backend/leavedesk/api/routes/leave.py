@@ -1,3 +1,6 @@
+import base64
+import binascii
+from datetime import date
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, BackgroundTasks, Header, HTTPException, Query, Response, status
@@ -6,6 +9,7 @@ from leavedesk.api.auth import CurrentUser, ManagerUser, User
 from leavedesk.api.schemas import (
     ApplyLeaveIn,
     BalanceOut,
+    EmployeeOut,
     LeaveRequestOut,
     Page,
     RejectIn,
@@ -18,7 +22,7 @@ from leavedesk.domain.exceptions import (
     NotFoundError,
     VersionConflictError,
 )
-from leavedesk.domain.models import LeaveRequest, LeaveStatus, LeaveType
+from leavedesk.domain.models import Employee, LeaveRequest, LeaveStatus, LeaveType
 from leavedesk.domain.notifications import Notification
 
 router = APIRouter(tags=["leave"])
@@ -31,7 +35,8 @@ def visible_employee_ids(store: Store, user: CurrentUser) -> set[str]:
     """An employee sees themselves. A manager also sees their direct reports."""
     ids = {user.id}
     if user.is_manager:
-        ids |= {e.id for e in store.repository.list_employees() if e.manager_id == user.id}
+        # Only the reports, not every employee in the company (step 6).
+        ids |= {e.id for e in store.repository.direct_reports(user.id)}
     return ids
 
 
@@ -176,24 +181,61 @@ def list_leave_requests(
     sort: Literal["start_date", "-start_date"] = "start_date",
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
     offset: Annotated[int, Query(ge=0)] = 0,
+    cursor: Annotated[
+        str | None,
+        Query(description="The `next_cursor` from the previous page. Use instead of offset."),
+    ] = None,
 ) -> dict:
     visible = visible_employee_ids(store, user)
     if employee_id is not None:
         if employee_id not in visible:
             raise HTTPException(403, "you cannot see this employee's requests")
         visible = {employee_id}
+    if cursor is not None and offset:
+        raise InvalidLeaveRequestError("use either cursor or offset, not both")
 
-    requests = [r for e in sorted(visible) for r in store.repository.requests_for(e)]
-    if status_filter is not None:
-        requests = [r for r in requests if r.status is status_filter]
-    requests.sort(key=lambda r: (r.start_date, r.id), reverse=sort.startswith("-"))
-
+    descending = sort.startswith("-")
+    page = store.repository.page_requests(
+        visible,
+        status_filter,
+        descending,
+        limit,
+        offset,
+        after=decode_cursor(cursor) if cursor else None,
+    )
+    last = page.items[-1] if page.items else None
     return {
-        "items": requests[offset : offset + limit],
-        "total": len(requests),
+        "items": page.items,
+        "total": page.total,
         "limit": limit,
         "offset": offset,
+        "next_cursor": encode_cursor(last) if page.has_more and last else None,
     }
+
+
+def encode_cursor(request: LeaveRequest) -> str:
+    """The last item's sort key, made opaque so clients do not build their own."""
+    raw = f"{request.start_date.isoformat()}|{request.id}".encode()
+    return base64.urlsafe_b64encode(raw).decode()
+
+
+def decode_cursor(cursor: str) -> tuple[date, str]:
+    try:
+        start, request_id = base64.urlsafe_b64decode(cursor.encode()).decode().split("|", 1)
+        return date.fromisoformat(start), request_id
+    except (binascii.Error, UnicodeDecodeError, ValueError):
+        raise InvalidLeaveRequestError("the cursor is not valid") from None
+
+
+@router.get("/employees", response_model=list[EmployeeOut])
+def search_employees(
+    user: ManagerUser,
+    store: StoreDep,
+    q: Annotated[str, Query(min_length=2, max_length=100, description="Part of a name")],
+    limit: Annotated[int, Query(ge=1, le=50)] = 20,
+) -> list[Employee]:
+    """Managers find people by name, for example ?q=ash finds Asha Rao."""
+    return store.repository.search_employees(q.strip(), limit)
 
 
 @router.get("/leave-requests/{request_id}", response_model=LeaveRequestOut)
