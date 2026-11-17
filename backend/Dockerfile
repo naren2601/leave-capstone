@@ -12,6 +12,8 @@ COPY requirements.txt .
 RUN pip install -r requirements.txt
 
 COPY leavedesk ./leavedesk
+COPY alembic.ini ./
+COPY migrations ./migrations
 
 # Never run the app as root inside the container.
 RUN useradd --create-home --uid 10001 app
@@ -22,4 +24,5 @@ EXPOSE 8000
 HEALTHCHECK --interval=10s --timeout=3s --retries=5 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"
 
-CMD ["uvicorn", "leavedesk.api.main:create_app", "--factory", "--host", "0.0.0.0", "--port", "8000"]
+# Bring the database schema up to date, then start the API.
+CMD ["sh", "-c", "alembic upgrade head && exec uvicorn leavedesk.api.main:create_app --factory --host 0.0.0.0 --port 8000"]

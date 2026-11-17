@@ -7,13 +7,17 @@ services:
   api:
     build: .
     env_file: .env
+    environment:
+      # Inside Docker the database is the "db" service, not localhost.
+      # Docker always uses psycopg; pg8000 is only a Windows-laptop workaround.
+      LEAVEDESK_DATABASE_URL: postgresql+psycopg://leavedesk:${POSTGRES_PASSWORD}@db:5432/leavedesk
     ports:
       - "8000:8000"
     depends_on:
       db:
         condition: service_healthy
 
-  # PostgreSQL is started now but not used until Day 3 (Capstone 3).
+  # PostgreSQL 17. The api service applies the Alembic migrations when it starts.
   db:
     image: postgres:17-alpine
     environment:
