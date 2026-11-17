@@ -10,7 +10,7 @@ from leavedesk.api.schemas import (
     Page,
     RejectIn,
 )
-from leavedesk.api.state import AppState, State
+from leavedesk.api.state import AppState, State, Store, StoreDep
 from leavedesk.domain.exceptions import (
     InvalidTransitionError,
     NotAuthorizedError,
@@ -25,18 +25,18 @@ router = APIRouter(tags=["leave"])
 # Who can see what
 
 
-def visible_employee_ids(state: AppState, user: CurrentUser) -> set[str]:
+def visible_employee_ids(store: Store, user: CurrentUser) -> set[str]:
     """An employee sees themselves. A manager also sees their direct reports."""
     ids = {user.id}
     if user.is_manager:
-        ids |= {e.id for e in state.repository.list_employees() if e.manager_id == user.id}
+        ids |= {e.id for e in store.repository.list_employees() if e.manager_id == user.id}
     return ids
 
 
-def load_visible_request(state: AppState, user: CurrentUser, request_id: str) -> LeaveRequest:
+def load_visible_request(store: Store, user: CurrentUser, request_id: str) -> LeaveRequest:
     """Return the request, or 404 if it is missing or not the user's to see."""
-    request = state.repository.get_request(request_id)  # NotFoundError -> 404
-    if request.employee_id not in visible_employee_ids(state, user):
+    request = store.repository.get_request(request_id)  # NotFoundError -> 404
+    if request.employee_id not in visible_employee_ids(store, user):
         raise NotFoundError(f"no leave request with id {request_id}")
     return request
 
@@ -50,14 +50,14 @@ def send_later(background: BackgroundTasks, state: AppState, outbox: list[Notifi
 
 
 @router.get("/employees/{employee_id}/balance", response_model=list[BalanceOut])
-def get_balance(employee_id: str, user: User, state: State) -> list[BalanceOut]:
-    employee = state.repository.get_employee(employee_id)  # NotFoundError -> 404
+def get_balance(employee_id: str, user: User, store: StoreDep) -> list[BalanceOut]:
+    employee = store.repository.get_employee(employee_id)  # NotFoundError -> 404
     if user.id != employee.id and employee.manager_id != user.id:
         raise NotAuthorizedError("you can only see your own or your team's balance")
 
     balances = []
     for leave_type in LeaveType:
-        b = state.service.get_balance(employee_id, leave_type)
+        b = store.service.get_balance(employee_id, leave_type)
         balances.append(
             BalanceOut(
                 leave_type=leave_type,
@@ -79,10 +79,14 @@ def get_balance(employee_id: str, user: User, state: State) -> list[BalanceOut]:
     status_code=status.HTTP_201_CREATED,
 )
 async def apply_for_leave(
-    body: ApplyLeaveIn, user: User, state: State, background: BackgroundTasks
+    body: ApplyLeaveIn,
+    user: User,
+    state: State,
+    store: StoreDep,
+    background: BackgroundTasks,
 ) -> LeaveRequest:
     outbox: list[Notification] = []
-    request = await state.service.apply(
+    request = await store.service.apply(
         user.id,
         body.leave_type,
         body.start_date,
@@ -98,20 +102,20 @@ async def apply_for_leave(
 @router.get("/leave-requests", response_model=Page[LeaveRequestOut])
 def list_leave_requests(
     user: User,
-    state: State,
+    store: StoreDep,
     status_filter: Annotated[LeaveStatus | None, Query(alias="status")] = None,
     employee_id: str | None = None,
     sort: Literal["start_date", "-start_date"] = "start_date",
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> dict:
-    visible = visible_employee_ids(state, user)
+    visible = visible_employee_ids(store, user)
     if employee_id is not None:
         if employee_id not in visible:
             raise HTTPException(403, "you cannot see this employee's requests")
         visible = {employee_id}
 
-    requests = [r for e in sorted(visible) for r in state.repository.requests_for(e)]
+    requests = [r for e in sorted(visible) for r in store.repository.requests_for(e)]
     if status_filter is not None:
         requests = [r for r in requests if r.status is status_filter]
     requests.sort(key=lambda r: (r.start_date, r.id), reverse=sort.startswith("-"))
@@ -125,16 +129,20 @@ def list_leave_requests(
 
 
 @router.get("/leave-requests/{request_id}", response_model=LeaveRequestOut)
-def get_leave_request(request_id: str, user: User, state: State) -> LeaveRequest:
-    return load_visible_request(state, user, request_id)
+def get_leave_request(request_id: str, user: User, store: StoreDep) -> LeaveRequest:
+    return load_visible_request(store, user, request_id)
 
 
 @router.post("/leave-requests/{request_id}/approve", response_model=LeaveRequestOut)
 async def approve_leave(
-    request_id: str, user: ManagerUser, state: State, background: BackgroundTasks
+    request_id: str,
+    user: ManagerUser,
+    state: State,
+    store: StoreDep,
+    background: BackgroundTasks,
 ) -> LeaveRequest:
     outbox: list[Notification] = []
-    request = await state.service.approve(request_id, user.id, outbox=outbox)
+    request = await store.service.approve(request_id, user.id, outbox=outbox)
     send_later(background, state, outbox)
     return request
 
@@ -145,19 +153,24 @@ async def reject_leave(
     body: RejectIn,
     user: ManagerUser,
     state: State,
+    store: StoreDep,
     background: BackgroundTasks,
 ) -> LeaveRequest:
     outbox: list[Notification] = []
-    request = await state.service.reject(request_id, user.id, body.reason, outbox=outbox)
+    request = await store.service.reject(request_id, user.id, body.reason, outbox=outbox)
     send_later(background, state, outbox)
     return request
 
 
 @router.delete("/leave-requests/{request_id}", response_model=LeaveRequestOut)
 async def cancel_leave(
-    request_id: str, user: User, state: State, background: BackgroundTasks
+    request_id: str,
+    user: User,
+    state: State,
+    store: StoreDep,
+    background: BackgroundTasks,
 ) -> LeaveRequest:
-    request = state.repository.get_request(request_id)  # NotFoundError -> 404
+    request = store.repository.get_request(request_id)  # NotFoundError -> 404
     if request.employee_id != user.id:
         raise NotAuthorizedError("only the owner can cancel a request")
     if request.status is not LeaveStatus.PENDING:
@@ -167,6 +180,6 @@ async def cancel_leave(
         )
 
     outbox: list[Notification] = []
-    request = await state.service.cancel(request_id, user.id, outbox=outbox)
+    request = await store.service.cancel(request_id, user.id, outbox=outbox)
     send_later(background, state, outbox)
     return request
