@@ -13,9 +13,10 @@ It translates between the domain objects (Day 1) and the database rows (Day 3):
 """
 
 import uuid
+from datetime import date
 from decimal import Decimal
 
-from sqlalchemy import func, select, text
+from sqlalchemy import Select, func, select, text, tuple_
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import Session, selectinload
 from sqlalchemy.orm.exc import StaleDataError
@@ -23,7 +24,11 @@ from sqlalchemy.orm.exc import StaleDataError
 from leavedesk.db import models as db
 from leavedesk.db.errors import domain_error
 from leavedesk.db.ids import uuid7
-from leavedesk.domain.exceptions import NotFoundError, VersionConflictError
+from leavedesk.domain.exceptions import (
+    InvalidLeaveRequestError,
+    NotFoundError,
+    VersionConflictError,
+)
 from leavedesk.domain.models import (
     DayPart,
     Employee,
@@ -33,7 +38,7 @@ from leavedesk.domain.models import (
     Manager,
 )
 from leavedesk.domain.policies import LeaveBalance
-from leavedesk.domain.repository import LeaveRepository
+from leavedesk.domain.repository import LeaveRepository, RequestPage
 
 
 class PostgresLeaveRepository(LeaveRepository):
@@ -41,6 +46,9 @@ class PostgresLeaveRepository(LeaveRepository):
         self.session = session
         self.tenant_id = tenant_id
         self.year = year  # balances are kept per calendar year
+        # Employee code -> internal id, remembered for this request only (step 6).
+        # Codes never change, and a repository lives for one transaction.
+        self._ids_by_code: dict[str, int] = {}
 
     # Employees
 
@@ -100,6 +108,91 @@ class PostgresLeaveRepository(LeaveRepository):
             .order_by(db.LeaveRequest.start_date, db.LeaveRequest.id)
         )
         return [_to_domain_request(row) for row in rows]
+
+    # Lists and search (step 6): the database filters, sorts and pages
+
+    def direct_reports(self, manager_id: str) -> list[Employee]:
+        manager = manager_id_of(self.tenant_id, manager_id)
+        rows = self.session.scalars(
+            select(db.Employee)
+            .where(db.Employee.tenant_id == self.tenant_id, db.Employee.manager_id == manager)
+            .options(selectinload(db.Employee.manager))
+            .order_by(db.Employee.code)
+        ).all()
+        self._ids_by_code.update((row.code, row.id) for row in rows)
+        return [_to_domain_employee(row) for row in rows]
+
+    def search_employees(self, text: str, limit: int) -> list[Employee]:
+        # Contains-search, ignoring case. The trigram index (migration 0003) makes
+        # '%text%' fast; a normal B-tree index cannot help with a leading '%'.
+        # Escape LIKE's wildcards, so a search for "50%" means the characters "50%".
+        escaped = text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        rows = self.session.scalars(
+            select(db.Employee)
+            .where(
+                db.Employee.tenant_id == self.tenant_id,
+                db.Employee.name.ilike(f"%{escaped}%", escape="\\"),
+            )
+            .options(selectinload(db.Employee.manager))
+            .order_by(db.Employee.name, db.Employee.code)
+            .limit(limit)
+        )
+        return [_to_domain_employee(row) for row in rows]
+
+    def page_requests(
+        self,
+        employee_ids: set[str],
+        status: LeaveStatus | None,
+        descending: bool,
+        limit: int,
+        offset: int = 0,
+        after: tuple[date, str] | None = None,
+    ) -> RequestPage:
+        query = self.request_list_query(employee_ids, status)
+        total = self.session.scalar(select(func.count()).select_from(query.subquery()))
+        rows = self.session.scalars(
+            self.request_page_query(query, descending, limit + 1, offset, after).options(
+                selectinload(db.LeaveRequest.employee), selectinload(db.LeaveRequest.leave_type)
+            )
+        ).all()
+        items = [_to_domain_request(row) for row in rows[:limit]]
+        return RequestPage(items, total or 0, has_more=len(rows) > limit)
+
+    def request_list_query(
+        self, employee_ids: set[str], status: LeaveStatus | None
+    ) -> Select[tuple[db.LeaveRequest]]:
+        query = select(db.LeaveRequest).where(
+            db.LeaveRequest.tenant_id == self.tenant_id,
+            db.LeaveRequest.employee_id.in_(self._employee_ids(employee_ids)),
+        )
+        if status is not None:
+            query = query.where(db.LeaveRequest.status == status.value)
+        return query
+
+    @staticmethod
+    def request_page_query(
+        query: Select,
+        descending: bool,
+        limit: int,
+        offset: int = 0,
+        after: tuple[date, str] | None = None,
+    ) -> Select:
+        key = tuple_(db.LeaveRequest.start_date, db.LeaveRequest.id)
+        if after is not None:
+            start, request_id = after
+            try:
+                last_seen = tuple_(start, uuid.UUID(request_id))
+            except ValueError:
+                raise InvalidLeaveRequestError("the cursor is not valid") from None
+            # Keyset: "after the last row I saw". The index jumps straight there,
+            # instead of reading and throwing away `offset` rows.
+            query = query.where(key < last_seen if descending else key > last_seen)
+        order = (
+            (db.LeaveRequest.start_date.desc(), db.LeaveRequest.id.desc())
+            if descending
+            else (db.LeaveRequest.start_date, db.LeaveRequest.id)
+        )
+        return query.order_by(*order).limit(limit).offset(offset)
 
     # Balances
 
@@ -180,7 +273,21 @@ class PostgresLeaveRepository(LeaveRepository):
         row = self.session.scalar(query)
         if row is None:
             raise NotFoundError(f"no employee with id {code}")
+        self._ids_by_code[row.code] = row.id
         return row
+
+    def _employee_ids(self, codes: set[str]) -> list[int]:
+        """Internal ids for these codes. Looks up only the ones not seen yet, so
+        a manager's team (just loaded by direct_reports) costs no query at all."""
+        missing = codes - self._ids_by_code.keys()
+        if missing:
+            found = self.session.execute(
+                select(db.Employee.code, db.Employee.id).where(
+                    db.Employee.tenant_id == self.tenant_id, db.Employee.code.in_(missing)
+                )
+            ).all()
+            self._ids_by_code.update(found)
+        return [self._ids_by_code[c] for c in codes if c in self._ids_by_code]
 
     def _leave_type_row(self, leave_type: LeaveType) -> db.LeaveType:
         row = self.session.scalar(
@@ -364,4 +471,13 @@ def _to_domain_balance(
         entitled=float(row.entitled),
         used=float(row.used),
         pending=float(row.pending),
+    )
+
+
+def manager_id_of(tenant_id: int, manager_code: str):
+    """The manager's internal id, as a subquery (one round trip, not two)."""
+    return (
+        select(db.Employee.id)
+        .where(db.Employee.tenant_id == tenant_id, db.Employee.code == manager_code)
+        .scalar_subquery()
     )

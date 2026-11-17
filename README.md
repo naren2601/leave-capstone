@@ -7,7 +7,7 @@ and everyone involved is notified.
 |---|---|---|
 | 1 | Domain core in plain Python | [SPEC.md](SPEC.md) |
 | 2 | REST API with FastAPI, JWT login, live notifications, Docker | [API_SPEC.md](API_SPEC.md) |
-| 3 | PostgreSQL with SQLAlchemy 2 and Alembic | [SCHEMA.md](SCHEMA.md) |
+| 3 | PostgreSQL with SQLAlchemy 2 and Alembic, measured at 100,000 requests | [SCHEMA.md](SCHEMA.md), [PERF.md](PERF.md) |
 
 ## Requirements
 
@@ -217,6 +217,7 @@ backend/
 │   │   ├── roles.py            What the app's database role may do
 │   │   ├── users.py            Login accounts and lockout in PostgreSQL
 │   │   ├── notifications.py    Inbox, outbox worker and LISTEN listener
+│   │   ├── perf.py             100,000-request performance check (see PERF.md)
 │   │   ├── seed.py             Demo company, people and balances
 │   │   └── ids.py              UUIDv7 ids
 │   └── api/                    Day 2 REST API

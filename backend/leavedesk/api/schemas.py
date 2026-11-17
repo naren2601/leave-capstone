@@ -14,6 +14,9 @@ class Page[T](BaseModel):
     total: int
     limit: int
     offset: int
+    # Keyset pagination (Day 3, step 6): pass this as ?cursor= to get the next page.
+    # None when there is no next page, or where a list does not support cursors.
+    next_cursor: str | None = None
 
 
 class LoginIn(BaseModel):
@@ -53,6 +56,12 @@ class LeaveRequestOut(BaseModel):
     days: float
     decision_note: str | None
     version: int  # send it back as If-Match to approve, reject or cancel safely
+
+
+class EmployeeOut(BaseModel):
+    id: str
+    name: str
+    manager_id: str | None
 
 
 class BalanceOut(BaseModel):

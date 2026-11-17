@@ -52,6 +52,15 @@ reading the logs or running the tests, and then fixed.
     already opened a transaction, and `LISTEN` only starts when its transaction commits,
     so SSE streams never heard anything. Fixed by rolling back before switching to
     autocommit. Found by the two-server stream test.
+11. **The list endpoint did 149 queries for one page (Day 3, performance).** The Day 2
+    route was moved to the database unchanged: it loaded every employee, then queried each
+    team member's requests one by one (N+1) and paged in Python. Harmless with 5 demo
+    people; 707 ms with 10,000 employees. Found by measuring with 100,000 requests. Fixed
+    with one SQL query per page: 16.5 ms. A test now counts the queries (see `PERF.md`).
+12. **Migration 0003 failed only with pg8000 (Day 3, performance).** `CREATE INDEX
+    CONCURRENTLY` must run outside a transaction, but with pg8000 Alembic's autocommit
+    block still left one open. Found because every test runs on both drivers. Fixed by
+    ending that transaction first, with a comment explaining why.
 
 ## Security decisions we checked
 

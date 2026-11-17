@@ -138,6 +138,13 @@ class Employee(Base):
             ["employees.tenant_id", "employees.id"],
             name="fk_employees_tenant_id_manager_id_employees",
         ),
+        # Step 6. Name search with ILIKE '%text%' (pg_trgm, see migration 0003).
+        Index(
+            "ix_employees_name_trgm",
+            "name",
+            postgresql_using="gin",
+            postgresql_ops={"name": "gin_trgm_ops"},
+        ),
         ForeignKeyConstraint(
             ["tenant_id", "department_id"],
             ["departments.tenant_id", "departments.id"],
@@ -266,7 +273,25 @@ class LeaveRequest(Base):
             ["employees.tenant_id", "employees.id"],
             name="fk_leave_requests_tenant_id_decided_by_id_employees",
         ),
-        Index("ix_leave_requests_tenant_id_employee_id", "tenant_id", "employee_id"),
+        # Step 6. One employee's (or a team's) requests in date order: the index is
+        # already sorted, and keyset pagination jumps straight to the cursor.
+        # It also serves as the index for the employee foreign key.
+        Index(
+            "ix_leave_requests_history",
+            "tenant_id",
+            "employee_id",
+            "start_date",
+            "id",
+        ),
+        # Step 6. The manager's approval queue: only PENDING rows (about 1 in 10).
+        Index(
+            "ix_leave_requests_pending",
+            "tenant_id",
+            "employee_id",
+            "start_date",
+            "id",
+            postgresql_where=text("status = 'PENDING'"),
+        ),
         Index("ix_leave_requests_tenant_id_leave_type_id", "tenant_id", "leave_type_id"),
         Index(
             "ix_leave_requests_tenant_id_decided_by_id",

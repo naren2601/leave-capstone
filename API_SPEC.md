@@ -17,7 +17,7 @@ without changing the API.
 - Lists are paginated with `limit` (1 to 100, default 20) and `offset` (default 0) and return:
 
 ```json
-{ "items": [ ... ], "total": 42, "limit": 20, "offset": 0 }
+{ "items": [ ... ], "total": 42, "limit": 20, "offset": 0, "next_cursor": "MjAyNi0x..." }
 ```
 
 ## 2. Authentication
@@ -51,7 +51,8 @@ without changing the API.
 |---|---|---|---|---|---|
 | GET | `/employees/{id}/balance` | Self, or that employee's manager | — | List of `Balance` | 200, 401, 403, 404 |
 | POST | `/leave-requests` | Employee (applies for self) | `ApplyLeave` | `LeaveRequest` | 201, 401, 409, 422 |
-| GET | `/leave-requests` | Employee or manager | Query: `status`, `employee_id`, `sort`, `limit`, `offset` | Page of `LeaveRequest` | 200, 401, 403, 422 |
+| GET | `/leave-requests` | Employee or manager | Query: `status`, `employee_id`, `sort`, `limit`, `offset` or `cursor` | Page of `LeaveRequest` | 200, 401, 403, 422 |
+| GET | `/employees` | Manager | Query: `q` (2 to 100 characters), `limit` (1 to 50) | List of `{id, name, manager_id}` whose name contains `q`, ignoring case | 200, 401, 403, 422 |
 | GET | `/leave-requests/{id}` | Owner or their manager | — | `LeaveRequest` | 200, 401, 404 |
 | POST | `/leave-requests/{id}/approve` | The owner's manager | — | `LeaveRequest` | 200, 401, 403, 404, 409 |
 | POST | `/leave-requests/{id}/reject` | The owner's manager | `{reason}` | `LeaveRequest` | 200, 401, 403, 404, 409, 422 |
@@ -61,6 +62,10 @@ Rules:
 - **List visibility:** an employee sees only their own requests. A manager sees their own
   and their direct reports'. Filtering by an `employee_id` you cannot see returns 403.
 - **Sorting:** `sort` is `start_date` (default) or `-start_date`.
+- **Cursor pages (added on Day 3, step 6).** Every list page has `next_cursor`. Pass it
+  as `?cursor=` (with the same filters and sort) to get the next page; it is `null` on the
+  last page. Unlike `offset`, a cursor stays fast however deep you go (see `PERF.md`).
+  Use `cursor` or `offset`, not both (422). A cursor that was not made by the API is 422.
 - **Get by id:** a request you cannot see returns **404, not 403**, so ids of other
   people's requests are not revealed.
 - **Cancel:** the API cancels `PENDING` requests only, as the workshop plan says. Cancelling

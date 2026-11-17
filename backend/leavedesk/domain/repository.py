@@ -5,11 +5,26 @@ version can later be swapped for a database without changing the service.
 """
 
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
+from datetime import date
 from itertools import count
 
 from leavedesk.domain.exceptions import NotFoundError
-from leavedesk.domain.models import Employee, LeaveRequest, LeaveType
+from leavedesk.domain.models import Employee, LeaveRequest, LeaveStatus, LeaveType
 from leavedesk.domain.policies import LeaveBalance
+
+
+@dataclass(frozen=True)
+class RequestPage:
+    """One page of leave requests, sorted by (start_date, id)."""
+
+    items: list[LeaveRequest]
+    total: int
+    has_more: bool
+
+
+def _sort_key(request: LeaveRequest) -> tuple[date, str]:
+    return (request.start_date, request.id)
 
 
 class LeaveRepository(ABC):
@@ -47,6 +62,49 @@ class LeaveRepository(ABC):
     @abstractmethod
     def remember_idempotency_key(self, employee_id: str, key: str, request_id: str) -> None:
         """Record which request an Idempotency-Key created."""
+
+    # Day 3, step 6. These defaults work for any repository; the PostgreSQL one
+    # overrides them with single SQL queries that use indexes.
+
+    def direct_reports(self, manager_id: str) -> list[Employee]:
+        return [e for e in self.list_employees() if e.manager_id == manager_id]
+
+    def search_employees(self, text: str, limit: int) -> list[Employee]:
+        """Employees whose name contains the text, ignoring case."""
+        needle = text.casefold()
+        found = [e for e in self.list_employees() if needle in e.name.casefold()]
+        return sorted(found, key=lambda e: (e.name, e.id))[:limit]
+
+    def page_requests(
+        self,
+        employee_ids: set[str],
+        status: LeaveStatus | None,
+        descending: bool,
+        limit: int,
+        offset: int = 0,
+        after: tuple[date, str] | None = None,
+    ) -> RequestPage:
+        """Requests of these employees, sorted by (start_date, id).
+
+        Page with offset, or with after: the (start_date, id) of the last item
+        already seen (keyset pagination), which stays fast however deep you go.
+        """
+        matching = [
+            r
+            for e in employee_ids
+            for r in self.requests_for(e)
+            if status is None or r.status is status
+        ]
+        matching.sort(key=_sort_key, reverse=descending)
+        rest = matching
+        if after is not None:
+            rest = [
+                r
+                for r in matching
+                if (_sort_key(r) < after if descending else _sort_key(r) > after)
+            ]
+        page = rest[offset : offset + limit + 1]
+        return RequestPage(page[:limit], len(matching), has_more=len(page) > limit)
 
     def save_changes(self, request: LeaveRequest, balance: LeaveBalance) -> None:
         """Save a request and the balance it changed, as one unit.
