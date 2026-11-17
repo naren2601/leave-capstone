@@ -40,6 +40,14 @@ class LeaveRepository(ABC):
     @abstractmethod
     def save_balance(self, balance: LeaveBalance) -> None: ...
 
+    @abstractmethod
+    def find_by_idempotency_key(self, employee_id: str, key: str) -> LeaveRequest | None:
+        """The request first created with this Idempotency-Key, if any."""
+
+    @abstractmethod
+    def remember_idempotency_key(self, employee_id: str, key: str, request_id: str) -> None:
+        """Record which request an Idempotency-Key created."""
+
     def save_changes(self, request: LeaveRequest, balance: LeaveBalance) -> None:
         """Save a request and the balance it changed, as one unit.
 
@@ -58,6 +66,7 @@ class InMemoryLeaveRepository(LeaveRepository):
         self._requests: dict[str, LeaveRequest] = {}
         self._balances: dict[tuple[str, LeaveType], LeaveBalance] = {}
         self._ids = count(1)
+        self._idempotency_keys: dict[tuple[str, str], str] = {}
 
     def add_employee(self, employee: Employee) -> None:
         self._employees[employee.id] = employee
@@ -93,3 +102,10 @@ class InMemoryLeaveRepository(LeaveRepository):
 
     def save_balance(self, balance: LeaveBalance) -> None:
         self._balances[(balance.employee_id, balance.leave_type)] = balance
+
+    def find_by_idempotency_key(self, employee_id: str, key: str) -> LeaveRequest | None:
+        request_id = self._idempotency_keys.get((employee_id, key))
+        return None if request_id is None else self._requests[request_id]
+
+    def remember_idempotency_key(self, employee_id: str, key: str, request_id: str) -> None:
+        self._idempotency_keys[(employee_id, key)] = request_id

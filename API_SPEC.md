@@ -64,6 +64,21 @@ Rules:
   starts; the API does not expose that today.)
 - **DELETE returns 200 with the request**, not 204, so the client sees the new status.
 
+### Safe changes (added on Day 3)
+
+- **Versions and `If-Match` (optimistic locking).** Every leave request has a `version`
+  that goes up by one on each change, and responses carry it as an `ETag` header, such as
+  `ETag: "2"`. Approve, reject and cancel accept an optional `If-Match` header with the
+  version the client last saw. If the request has changed since, the API answers
+  **409 `VERSION_CONFLICT`** and changes nothing. Without `If-Match` they behave as before.
+- **`Idempotency-Key` on `POST /leave-requests`.** Any unique text (1 to 200 characters),
+  such as a UUID. A retry with the same key returns the first result, with the same id,
+  status 201 and an `Idempotent-Replayed: true` header, instead of creating a second
+  request. Keys belong to one employee. Reusing a key with a different body is 422.
+- **Row locks.** Approve, reject and cancel lock the request and balance rows with
+  `SELECT ... FOR UPDATE`, so two managers approving at the same moment take turns:
+  one gets 200 and the other gets 409, and the days are deducted once.
+
 ### Notifications
 
 | Method | Path | Who | Request | Response | Status codes |
@@ -83,12 +98,26 @@ Submit, approve, reject and cancel save the change, then queue the Day 1 notifie
 FastAPI `BackgroundTasks`. The response is sent **before** notifications go out.
 A failed notification never changes the response or undoes the action.
 
+**With PostgreSQL (added on Day 3, step 4):**
+
+- The in-app notifications and one `notification_outbox` row each are saved **in the same
+  transaction** as the change. If the change fails, no notification exists.
+- On commit, a trigger calls `pg_notify('leavedesk_notifications', ...)`. Every running API
+  process `LISTEN`s and pushes the notification to its open SSE streams, so a stream on one
+  server gets requests saved by another. A rolled-back change never notifies.
+- An outbox worker sends the emails. It claims rows with `FOR UPDATE SKIP LOCKED`, so two
+  workers never send the same email. It runs right after each change and every 5 seconds.
+  A failed email is retried after 30 s, 60 s, 120 s, ... and marked `FAILED` after 5 tries.
+  Delivery is at least once: an email can, rarely, be sent twice; never zero times.
+- `GET /notifications` is sorted and paged by the database, and notifications survive a
+  restart.
+
 ## 4. Schemas
 
 ```text
 ApplyLeave    { leave_type, start_date, end_date, day_part = "FULL", reason }
 LeaveRequest  { id, employee_id, leave_type, start_date, end_date, day_part,
-                reason, status, days, decision_note }
+                reason, status, days, decision_note, version }
 Balance       { leave_type, entitled, used, pending, available }
 Notification  { id, recipient, event, message, read, created_at }
 ```
@@ -123,6 +152,7 @@ It is empty otherwise.
 | 404 | `NOT_FOUND` | `NotFoundError`, or a resource you are not allowed to see |
 | 409 | `OVERLAPPING_LEAVE` | `OverlappingLeaveError` |
 | 409 | `INVALID_TRANSITION` | `InvalidTransitionError`, for example approving twice |
+| 409 | `VERSION_CONFLICT` | `VersionConflictError`: the `If-Match` version is out of date |
 | 422 | `VALIDATION_ERROR` | A missing or badly typed field, or `InvalidLeaveRequestError` |
 | 422 | `POLICY_VIOLATION` | `PolicyViolationError`, for example too little notice |
 | 422 | `INSUFFICIENT_BALANCE` | `InsufficientBalanceError` |

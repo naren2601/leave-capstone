@@ -14,6 +14,7 @@ from leavedesk.domain.exceptions import (
     InvalidLeaveRequestError,
     NotAuthorizedError,
     OverlappingLeaveError,
+    VersionConflictError,
 )
 from leavedesk.domain.instrumentation import audit
 from leavedesk.domain.models import (
@@ -111,8 +112,10 @@ class LeaveService:
         request_id: str,
         manager_id: str,
         outbox: list[Notification] | None = None,
+        expected_version: int | None = None,
     ) -> LeaveRequest:
         request, employee = self._load_for_manager(request_id, manager_id)
+        _check_version(request, expected_version)
 
         request.transition_to(LeaveStatus.APPROVED, self.today())
         balance = self.get_balance(employee.id, request.leave_type)
@@ -129,10 +132,12 @@ class LeaveService:
         manager_id: str,
         note: str,
         outbox: list[Notification] | None = None,
+        expected_version: int | None = None,
     ) -> LeaveRequest:
         if not note or not note.strip():
             raise InvalidLeaveRequestError("a reason is needed to reject leave")
         request, employee = self._load_for_manager(request_id, manager_id)
+        _check_version(request, expected_version)
 
         request.transition_to(LeaveStatus.REJECTED, self.today())
         request.decision_note = note.strip()
@@ -149,10 +154,12 @@ class LeaveService:
         request_id: str,
         employee_id: str,
         outbox: list[Notification] | None = None,
+        expected_version: int | None = None,
     ) -> LeaveRequest:
         request = self.repository.get_request(request_id)
         if request.employee_id != employee_id:
             raise NotAuthorizedError("only the owner can cancel a request")
+        _check_version(request, expected_version)
         employee = self.repository.get_employee(employee_id)
 
         was_approved = request.status is LeaveStatus.APPROVED
@@ -231,3 +238,12 @@ class LeaveService:
             outbox.extend(notifications)
             return
         await dispatch(self.notifiers, notifications)
+
+
+def _check_version(request: LeaveRequest, expected_version: int | None) -> None:
+    """Optimistic locking: refuse to change a request the client has a stale copy of."""
+    if expected_version is not None and request.version != expected_version:
+        raise VersionConflictError(
+            f"request {request.id} is at version {request.version}, "
+            f"not {expected_version}; reload it and try again"
+        )

@@ -19,6 +19,7 @@ from leavedesk.domain.exceptions import (
     NotFoundError,
     OverlappingLeaveError,
     PolicyViolationError,
+    VersionConflictError,
 )
 
 logger = logging.getLogger("leavedesk.api")
@@ -30,6 +31,7 @@ DOMAIN_ERRORS: list[tuple[type[LeaveDeskError], int, str]] = [
     (NotAuthorizedError, 403, "FORBIDDEN"),
     (OverlappingLeaveError, 409, "OVERLAPPING_LEAVE"),
     (InvalidTransitionError, 409, "INVALID_TRANSITION"),
+    (VersionConflictError, 409, "VERSION_CONFLICT"),
     (InvalidLeaveRequestError, 422, "VALIDATION_ERROR"),
     (PolicyViolationError, 422, "POLICY_VIOLATION"),
     (InsufficientBalanceError, 422, "INSUFFICIENT_BALANCE"),

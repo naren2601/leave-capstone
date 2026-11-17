@@ -36,6 +36,10 @@ class InvalidTransitionError(LeaveDeskError):
     """The status change is not allowed."""
 
 
+class VersionConflictError(LeaveDeskError):
+    """Someone else changed the request since the client last read it."""
+
+
 class NotAuthorizedError(LeaveDeskError):
     """The user is not allowed to perform this action."""
 

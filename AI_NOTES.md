@@ -38,6 +38,20 @@ reading the logs or running the tests, and then fixed.
 6. **A test claimed more than it checked.** A generated API test was named as if it proved
    notifications are sent after the response, but it only proved they were sent. It was
    replaced with an honest test.
+7. **The first migration made `period` NOT NULL (Day 3).** Reversed dates then failed with
+   a confusing range error instead of our named `dates_in_order` rule. Fixed: `period` is
+   NULL when the dates are reversed, so the named CHECK fires.
+8. **Notifications could go out before the commit (Day 3).** FastAPI runs a yield
+   dependency's cleanup after background tasks by default, so emails were sent before the
+   transaction committed. Fixed with `Depends(..., scope="function")`, with a test that
+   fails if the order changes.
+9. **A race returned 500 instead of 409 with pg8000 (Day 3).** psycopg reports a broken
+   constraint as `IntegrityError`, pg8000 as `ProgrammingError`. Fixed by mapping on the
+   SQLSTATE code (`23...`), not the Python class. Tests run on both drivers.
+10. **LISTEN silently did nothing with pg8000 (Day 3).** The connection pool's pre-ping had
+    already opened a transaction, and `LISTEN` only starts when its transaction commits,
+    so SSE streams never heard anything. Fixed by rolling back before switching to
+    autocommit. Found by the two-server stream test.
 
 ## Security decisions we checked
 

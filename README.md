@@ -7,7 +7,7 @@ and everyone involved is notified.
 |---|---|---|
 | 1 | Domain core in plain Python | [SPEC.md](SPEC.md) |
 | 2 | REST API with FastAPI, JWT login, live notifications, Docker | [API_SPEC.md](API_SPEC.md) |
-| 3 | PostgreSQL with SQLAlchemy 2 and Alembic (in progress) | [SCHEMA.md](SCHEMA.md) |
+| 3 | PostgreSQL with SQLAlchemy 2 and Alembic | [SCHEMA.md](SCHEMA.md) |
 
 ## Requirements
 
@@ -99,22 +99,30 @@ This starts the API on <http://localhost:8000/docs> and a PostgreSQL database
 
 ## Database (Day 3)
 
-Day 3 is in progress: the schema and migrations are done, and the API still uses
-in-memory storage until the PostgreSQL repository is added.
+Without `LEAVEDESK_DATABASE_URL` the API keeps everything in memory, as on Day 2. Set it
+and the API stores everything in PostgreSQL: one transaction per API request, so each
+request saves all its changes together or none of them.
 
-Start PostgreSQL with Docker, then create the tables:
+Start PostgreSQL with Docker, create the tables, then run the API:
 
 ```bash
 docker compose up -d db
 alembic upgrade head
+uvicorn leavedesk.api.main:create_app --factory --reload
 ```
 
-`alembic` reads `LEAVEDESK_DATABASE_URL` from your environment. In PowerShell, set it for
-the current terminal with:
+In `dev`, the API creates the demo company, people and balances on first start. You can
+also seed by hand with `python -m leavedesk.db.seed`.
+
+`alembic` and the API read `LEAVEDESK_DATABASE_URL`. Put it in `.env`, or set it for the
+current PowerShell terminal with:
 
 ```powershell
 $env:LEAVEDESK_DATABASE_URL = "postgresql+psycopg://leavedesk:<password>@localhost:5432/leavedesk"
 ```
+
+Set `LEAVEDESK_DATABASE_ECHO=true` to print every SQL statement, which makes N+1 queries
+easy to spot.
 
 Useful commands:
 
@@ -126,9 +134,10 @@ alembic upgrade head --sql  # print the SQL without running it
 
 ### Database tests
 
-Tests in `tests/db/` run against a real PostgreSQL. Each run creates its own temporary
-database, applies every migration, and drops it afterwards. Set
-`LEAVEDESK_TEST_DATABASE_URL` to enable them; without it they are skipped.
+Tests in `tests/db/` run against a real PostgreSQL, and every API test in `tests/api/`
+runs twice: once in memory (`[memory]`) and once on PostgreSQL (`[postgres]`). Each run
+creates its own temporary database, applies every migration, and drops it afterwards.
+Set `LEAVEDESK_TEST_DATABASE_URL` to enable them; without it they are skipped.
 
 ```powershell
 $env:LEAVEDESK_TEST_DATABASE_URL = "postgresql+psycopg://leavedesk:<password>@localhost:5432/postgres"
@@ -185,6 +194,10 @@ backend/
 │   │   └── notifications.py    Notifier, email and in-app notifiers
 │   ├── db/                     Day 3 PostgreSQL storage
 │   │   ├── models.py           SQLAlchemy models: every table, constraint and index
+│   │   ├── repository.py       LeaveRepository on PostgreSQL, with the ledger
+│   │   ├── errors.py           Database errors turned into LeaveDesk errors
+│   │   ├── notifications.py    Inbox, outbox worker and LISTEN listener
+│   │   ├── seed.py             Demo company, people and balances
 │   │   └── ids.py              UUIDv7 ids
 │   └── api/                    Day 2 REST API
 │       ├── main.py             App factory: create_app()

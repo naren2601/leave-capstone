@@ -102,6 +102,8 @@ class LeaveRequest(BaseModel):
     status: LeaveStatus = LeaveStatus.PENDING
     days: float = Field(default=0, ge=0)
     decision_note: str | None = None
+    # Goes up by one on every change, so a client can tell if its copy is stale.
+    version: int = Field(default=1, ge=1)
 
     @field_validator("reason")
     @classmethod
@@ -144,3 +146,4 @@ class LeaveRequest(BaseModel):
             raise InvalidTransitionError("approved leave cannot be cancelled after it has started")
 
         self.status = new_status
+        self.version += 1

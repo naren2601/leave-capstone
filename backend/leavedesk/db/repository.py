@@ -15,14 +15,15 @@ It translates between the domain objects (Day 1) and the database rows (Day 3):
 import uuid
 from decimal import Decimal
 
-from sqlalchemy import func, select
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy import func, select, text
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import Session, selectinload
+from sqlalchemy.orm.exc import StaleDataError
 
 from leavedesk.db import models as db
 from leavedesk.db.errors import domain_error
 from leavedesk.db.ids import uuid7
-from leavedesk.domain.exceptions import NotFoundError
+from leavedesk.domain.exceptions import NotFoundError, VersionConflictError
 from leavedesk.domain.models import (
     DayPart,
     Employee,
@@ -77,8 +78,9 @@ class PostgresLeaveRepository(LeaveRepository):
         return str(uuid7())
 
     def save_request(self, request: LeaveRequest) -> None:
-        self._save_request_row(request)
+        row = self._save_request_row(request)
         self._flush()
+        request.version = row.version
 
     def get_request(self, request_id: str) -> LeaveRequest:
         return _to_domain_request(self._request_row(request_id))
@@ -117,6 +119,37 @@ class PostgresLeaveRepository(LeaveRepository):
         self._flush()
         balance_row = self._balance_row(balance.employee_id, balance.leave_type, create=True)
         self._apply_balance_change(balance_row, balance, request_id=request_row.id)
+        self._flush()
+        request.version = request_row.version  # the database's count is the real one
+
+    # Idempotency keys
+
+    def find_by_idempotency_key(self, employee_id: str, key: str) -> LeaveRequest | None:
+        # Two retries with the same key can arrive at the same moment. This lock makes
+        # the second wait until the first commits, so it then finds the first's request
+        # instead of creating a duplicate. The lock ends with the transaction.
+        self.session.execute(
+            text("SELECT pg_advisory_xact_lock(hashtextextended(:lock, 0))"),
+            {"lock": f"idempotency:{self.tenant_id}:{employee_id}:{key}"},
+        )
+        request_id = self.session.scalar(
+            select(db.IdempotencyKey.leave_request_id).where(
+                db.IdempotencyKey.tenant_id == self.tenant_id,
+                db.IdempotencyKey.employee_id == self._employee_row(employee_id).id,
+                db.IdempotencyKey.key == key,
+            )
+        )
+        return None if request_id is None else self.get_request(str(request_id))
+
+    def remember_idempotency_key(self, employee_id: str, key: str, request_id: str) -> None:
+        self.session.add(
+            db.IdempotencyKey(
+                tenant_id=self.tenant_id,
+                employee_id=self._employee_row(employee_id).id,
+                key=key,
+                leave_request_id=uuid.UUID(request_id),
+            )
+        )
         self._flush()
 
     def ledger_total(self, employee_id: str, leave_type: LeaveType) -> dict[str, Decimal]:
@@ -264,7 +297,10 @@ class PostgresLeaveRepository(LeaveRepository):
     def _flush(self) -> None:
         try:
             self.session.flush()
-        except IntegrityError as error:
+        except StaleDataError as error:
+            # The version column did not match: someone else changed the row first.
+            raise VersionConflictError("the request was changed by someone else") from error
+        except DBAPIError as error:
             known = domain_error(error)
             if known is None:
                 raise
@@ -315,6 +351,7 @@ def _to_domain_request(row: db.LeaveRequest) -> LeaveRequest:
         status=LeaveStatus(row.status),
         days=float(row.days),
         decision_note=row.decision_note,
+        version=row.version,
     )
 
 
