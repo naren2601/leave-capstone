@@ -37,12 +37,26 @@ def alembic_config(url: str) -> Config:
     return config
 
 
+# The app's restricted role. Roles belong to the whole server, so the tests create it
+# (without a password, it cannot log in) and use it with SET ROLE.
+CREATE_APP_ROLE = """
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'leavedesk_app') THEN
+        CREATE ROLE leavedesk_app NOLOGIN;
+    END IF;
+END
+$$
+"""
+
+
 @contextmanager
 def temporary_database() -> Iterator[str]:
     """Create an empty database, yield its URL, then drop it."""
     admin = create_engine(ADMIN_URL, isolation_level="AUTOCOMMIT")
     name = f"leavedesk_test_{uuid.uuid4().hex[:12]}"
     with admin.connect() as connection:
+        connection.execute(text(CREATE_APP_ROLE))
         connection.execute(text(f'CREATE DATABASE "{name}"'))
     try:
         yield make_url(ADMIN_URL).set(database=name).render_as_string(hide_password=False)

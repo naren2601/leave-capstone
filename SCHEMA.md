@@ -237,6 +237,13 @@ which reads only the rows on the page instead of skipping over every earlier row
 - **No secrets in the repo.** Database passwords come from `.env`.
 - **Stretch: row-level security** on `tenant_id`, using `current_setting('app.tenant_id')`.
 
+**Built in step 5:** the roles are created by `backend/docker/initdb/01-roles.sh` when the
+database volume is first created; `leavedesk/db/roles.py` re-applies the app role's grants
+after every `alembic upgrade`. The timeouts are set on the role and on every connection
+(`leavedesk/db/engine.py`); a timeout becomes HTTP 503 `TRY_AGAIN`. Tests prove the app role
+cannot `DROP`, `ALTER`, `CREATE`, `TRUNCATE` or change the ledger, and that the whole API works
+with only its privileges. Row-level security was not done.
+
 ## 8. Build plan
 
 | # | Task | Part |

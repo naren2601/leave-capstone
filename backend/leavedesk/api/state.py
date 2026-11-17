@@ -15,16 +15,17 @@ from collections import deque
 from collections.abc import AsyncIterator, Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, timedelta
 from typing import Annotated, Protocol
 
 from fastapi import Depends, Request
-from sqlalchemy import Engine, create_engine
+from sqlalchemy import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
-from leavedesk.api.auth import UserAccount, UserStore, hash_password
+from leavedesk.api.auth import LoginPolicy, UserAccount, UserStore, hash_password
 from leavedesk.api.settings import Settings
 from leavedesk.api.stream import NotificationBroker
+from leavedesk.db.engine import create_database_engine
 from leavedesk.db.notifications import (
     DatabaseInbox,
     NotificationListener,
@@ -32,7 +33,8 @@ from leavedesk.db.notifications import (
     PostgresInbox,
 )
 from leavedesk.db.repository import PostgresLeaveRepository
-from leavedesk.db.seed import find_tenant, seed_tenant
+from leavedesk.db.seed import find_tenant, seed_tenant, seed_users
+from leavedesk.db.users import PostgresUserStore
 from leavedesk.domain.exceptions import NotFoundError
 from leavedesk.domain.models import Employee, Manager
 from leavedesk.domain.notifications import (
@@ -73,7 +75,7 @@ class Store:
 class AppState:
     settings: Settings
     repository: LeaveRepository
-    users: UserStore
+    users: UserStore | PostgresUserStore
     # In memory mode, the service itself. In PostgreSQL mode, a template that
     # open_store() copies for each request with service.using(repository).
     service: LeaveService
@@ -211,15 +213,18 @@ SEED_PEOPLE: list[Employee] = [
 
 
 def build_state(settings: Settings, today: Callable[[], date] = date.today) -> AppState:
-    users = UserStore()
+    policy = LoginPolicy(
+        max_failures=settings.login_max_failures,
+        lock_for=timedelta(minutes=settings.login_lock_minutes),
+    )
     password_hash = hash_password(settings.seed_password.get_secret_value())
-    for person in SEED_PEOPLE:
-        role = "manager" if isinstance(person, Manager) else "employee"
-        users.add(UserAccount(person.id, person.email, password_hash, role))
-
     inbox, email, broker = InAppNotifier(), EmailNotifier(), NotificationBroker()
 
     if settings.database_url is None:
+        users = UserStore(policy)
+        for person in SEED_PEOPLE:
+            role = "manager" if isinstance(person, Manager) else "employee"
+            users.add(UserAccount(person.id, person.email, password_hash, role))
         repository = InMemoryLeaveRepository()
         for person in SEED_PEOPLE:
             repository.add_employee(person.model_copy())
@@ -228,18 +233,16 @@ def build_state(settings: Settings, today: Callable[[], date] = date.today) -> A
         service = LeaveService(repository, today=today)
         return AppState(settings, repository, users, service, inbox, email, broker, today)
 
-    engine = create_engine(
-        settings.database_url.get_secret_value(),
-        echo=settings.database_echo,
-        pool_pre_ping=True,  # replace connections the database has closed
-    )
+    engine = create_database_engine(settings)  # with statement and lock timeouts
     session_factory = sessionmaker(engine, expire_on_commit=False)
     with session_factory.begin() as session:
         if settings.environment == "dev":
-            # Demo people and balances, created once. Never automatic in production.
+            # Demo people, balances and logins, created once. Never automatic in production.
             tenant_id = seed_tenant(session, settings.tenant_name, SEED_PEOPLE, today().year)
+            seed_users(session, tenant_id, password_hash)
         else:
             tenant_id = find_tenant(session, settings.tenant_name)
+    users = PostgresUserStore(session_factory, tenant_id, policy)
 
     placeholder = _PerRequestOnly()
     state = AppState(

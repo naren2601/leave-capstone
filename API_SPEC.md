@@ -30,7 +30,11 @@ without changing the API.
   reveal which emails exist.
 - `GET /notifications/stream` also accepts `?access_token=<token>`, because the browser's
   `EventSource` cannot send headers. This is the only route that accepts a query token.
-- Out of scope today: refresh tokens and account lockout (lockout is Day 3, Part D).
+- **Account lockout (added on Day 3, step 5).** 5 wrong passwords in a row lock the account
+  for 15 minutes. While locked, even the right password gets the **same** 401 message, so
+  the response never reveals that the account exists or is locked. A good login resets the
+  count. With PostgreSQL the count is saved in the `users` table, so every server shares it.
+- Out of scope: refresh tokens.
 
 ## 3. Endpoints
 
@@ -157,6 +161,7 @@ It is empty otherwise.
 | 422 | `POLICY_VIOLATION` | `PolicyViolationError`, for example too little notice |
 | 422 | `INSUFFICIENT_BALANCE` | `InsufficientBalanceError` |
 | 500 | `INTERNAL_ERROR` | Anything unexpected. The message is generic; details go to the log only |
+| 503 | `TRY_AGAIN` | The database was too busy: a row lock or query took too long. Has a `Retry-After: 1` header; nothing was changed |
 
 ## 6. Acceptance criteria
 

@@ -7,6 +7,7 @@ from alembic import context
 from sqlalchemy import create_engine, pool
 
 from leavedesk.db.models import Base
+from leavedesk.db.roles import grant_app_privileges
 
 config = context.config
 if config.config_file_name is not None:
@@ -17,7 +18,12 @@ target_metadata = Base.metadata
 
 def database_url() -> str:
     # Tests pass the URL in directly; everyone else uses the environment.
-    url = config.attributes.get("database_url") or os.environ.get("LEAVEDESK_DATABASE_URL")
+    # Migrations run as the table owner (leavedesk_migrator), not as the app's role.
+    url = (
+        config.attributes.get("database_url")
+        or os.environ.get("LEAVEDESK_MIGRATION_DATABASE_URL")
+        or os.environ.get("LEAVEDESK_DATABASE_URL")
+    )
     if not url:
         raise RuntimeError(
             "Set LEAVEDESK_DATABASE_URL, for example "
@@ -65,6 +71,9 @@ def _run(connection) -> None:
     )
     with context.begin_transaction():
         context.run_migrations()
+    # Every upgrade re-applies the app role's grants, so new tables are covered too.
+    grant_app_privileges(connection)
+    connection.commit()
 
 
 if context.is_offline_mode():

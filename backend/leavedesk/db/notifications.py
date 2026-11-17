@@ -34,6 +34,7 @@ from leavedesk.domain.notifications import (
 logger = logging.getLogger("leavedesk.notifications")
 
 CHANNEL = "leavedesk_notifications"  # the pg_notify channel, see migration 0002
+LISTEN_SQL = "LISTEN leavedesk_notifications"  # a fixed statement: no values inside
 
 
 def _uuid_or_none(notification_id: str) -> uuid.UUID | None:
@@ -342,14 +343,14 @@ class NotificationListener:
 def _driver_notifications(driver, poll_seconds: float, keep_going: Callable[[], bool]):
     """Yield each NOTIFY payload. psycopg and pg8000 receive them differently."""
     if hasattr(driver, "notifies"):  # psycopg 3
-        driver.execute(f"LISTEN {CHANNEL}")
+        driver.execute(LISTEN_SQL)
         while keep_going():
             for notify in driver.notifies(timeout=poll_seconds):
                 yield notify.payload
         return
     # pg8000 collects notifications as they arrive with any query's response.
     cursor = driver.cursor()
-    cursor.execute(f"LISTEN {CHANNEL}")
+    cursor.execute(LISTEN_SQL)
     stop = threading.Event()
     while keep_going():
         cursor.execute("SELECT 1")
