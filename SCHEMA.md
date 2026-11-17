@@ -246,12 +246,36 @@ with only its privileges. Row-level security was not done.
 
 ## 8. Build plan
 
-| # | Task | Part |
-|---|---|---|
-| 1 | SQLAlchemy models and the first Alembic revision (tables, constraints, EXCLUDE, triggers) | A |
-| 2 | `PostgresLeaveRepository` and one session per request; Day 2 tests running on PostgreSQL | A |
-| 3 | Ledger-based balances, row locks, version column, idempotency key | C |
-| 4 | Notifications, outbox, worker, LISTEN/NOTIFY for SSE | C2 |
-| 5 | Login lockout, app role, timeouts | D |
-| 6 | Seed 100,000 requests, indexes, keyset pagination, `PERF.md` | B |
-| 7 | Overlap, concurrency and outbox-rollback tests | Done-when |
+| # | Task | Part | Status |
+|---|---|---|---|
+| 1 | SQLAlchemy models and the first Alembic revision (tables, constraints, EXCLUDE, triggers) | A | Done |
+| 2 | `PostgresLeaveRepository` and one session per request; Day 2 tests running on PostgreSQL | A | Done |
+| 3 | Ledger-based balances, row locks, version column, idempotency key | C | Done |
+| 4 | Notifications, outbox, worker, LISTEN/NOTIFY for SSE | C2 | Done |
+| 5 | Login lockout, app role, timeouts | D | Done |
+| 6 | Seed 100,000 requests, indexes, keyset pagination, `PERF.md` | B | Done |
+| 7 | Overlap, concurrency and outbox-rollback tests | Done-when | Done |
+
+## 9. Done when: every requirement and the tests that prove it
+
+All tests run on PostgreSQL with both drivers (psycopg and pg8000), and the API tests also
+run in memory. Final count: **490 passed** on PostgreSQL with each driver; without a database, 274 pass and
+the database tests are skipped.
+
+| Requirement | Proved by |
+|---|---|
+| Overlapping active leave is impossible, even in a race | `test_schema.py::test_overlapping_active_leave_is_rejected` (and 7 more EXCLUDE cases), `test_repository.py::test_overlap_missed_by_the_service_is_still_rejected`, `test_safe_changes.py::test_two_overlapping_requests_at_once_only_one_is_saved` |
+| Two approvals at once deduct the days once | `test_locking.py` (B waits for A's row lock), `test_safe_changes.py::test_two_approvals_at_once_deduct_the_days_once` |
+| Many people acting at once never break a rule | `test_done_when.py::test_many_people_at_once_never_break_a_rule`: 12 applications, then 9 decisions, all at once; every balance still equals its ledger and its requests |
+| A change and its notifications are saved together or not at all (outbox rollback) | `test_notifications.py::test_a_rolled_back_change_leaves_no_notification_and_no_outbox_row`, `test_done_when.py::test_a_failure_at_the_last_moment_undoes_everything` (request, ledger, balance, notifications, outbox and idempotency key all undone) |
+| Notifications go out only after commit | `test_notifications.py::test_listeners_hear_nothing_until_commit`, `test_storage.py::test_notifications_run_after_the_commit` |
+| Balances can never be overspent; the ledger is append-only | `test_schema.py::test_balance_cannot_be_overspent`, `test_ledger_rows_cannot_be_changed_or_deleted`, `test_roles.py` (the app role cannot `UPDATE` or `DELETE` the ledger) |
+| Stale edits and retries are safe | `test_safe_changes.py` (If-Match versions, Idempotency-Key, 3 identical retries at once create 1 request) |
+| Login lockout, least-privilege role, timeouts | `test_security.py`, `test_roles.py` |
+| Fast at 100,000 requests | `PERF.md`; `test_performance.py` (indexes used, no N+1), `test_paging.py` |
+| Schema and models agree; migrations reversible | `test_schema.py::test_models_and_migrations_match`, `test_migrations_upgrade_downgrade_and_upgrade_again` |
+
+Several of these were checked by breaking the code on purpose (a "mutation check") and
+confirming the test then fails: removing `SKIP LOCKED`, the login row lock, a request's
+`FOR UPDATE`, and the single-query list each made their test fail.
+

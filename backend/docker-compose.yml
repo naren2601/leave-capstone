@@ -30,7 +30,10 @@ services:
       LEAVEDESK_MIGRATOR_DB_PASSWORD: ${LEAVEDESK_MIGRATOR_DB_PASSWORD:?set it in .env}
       LEAVEDESK_APP_DB_PASSWORD: ${LEAVEDESK_APP_DB_PASSWORD:?set it in .env}
     ports:
-      - "5432:5432"
+      # Only this computer can connect (127.0.0.1), not the whole network.
+      # Set POSTGRES_HOST_PORT in .env if 5432 is taken, for example by a
+      # PostgreSQL installed directly on Windows.
+      - "127.0.0.1:${POSTGRES_HOST_PORT:-5432}:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
       # Runs once, on an empty volume. After changing it: docker compose down -v
