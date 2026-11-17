@@ -94,8 +94,8 @@ Then submit leave as Asha from Swagger. The notification appears in the stream s
 docker compose up --build
 ```
 
-This starts the API on <http://localhost:8000/docs> and a PostgreSQL database
-(not used until Day 3). Stop it with `Ctrl+C`, then `docker compose down`.
+This starts PostgreSQL, applies the migrations, and starts the API on
+<http://localhost:8000/docs>. Stop it with `Ctrl+C`, then `docker compose down`.
 
 ## Database (Day 3)
 
@@ -114,12 +114,29 @@ uvicorn leavedesk.api.main:create_app --factory --reload
 In `dev`, the API creates the demo company, people and balances on first start. You can
 also seed by hand with `python -m leavedesk.db.seed`.
 
-`alembic` and the API read `LEAVEDESK_DATABASE_URL`. Put it in `.env`, or set it for the
+The API reads `LEAVEDESK_DATABASE_URL`. `alembic` reads `LEAVEDESK_MIGRATION_DATABASE_URL`
+(or, if that is missing, `LEAVEDESK_DATABASE_URL`). Put them in `.env`, or set them for the
 current PowerShell terminal with:
 
 ```powershell
-$env:LEAVEDESK_DATABASE_URL = "postgresql+psycopg://leavedesk:<password>@localhost:5432/leavedesk"
+$env:LEAVEDESK_DATABASE_URL = "postgresql+psycopg://leavedesk_app:<app password>@localhost:5432/leavedesk"
+$env:LEAVEDESK_MIGRATION_DATABASE_URL = "postgresql+psycopg://leavedesk_migrator:<migrator password>@localhost:5432/leavedesk"
 ```
+
+### Database roles and security (Day 3, step 5)
+
+| Role | Used by | Can |
+|---|---|---|
+| `leavedesk` | You, in an emergency | Everything (superuser) |
+| `leavedesk_migrator` | `alembic upgrade` | Create, change and drop tables (it owns them) |
+| `leavedesk_app` | The API | Read and write rows only; never change `leave_ledger` or `audit_log` |
+
+- `docker/initdb/01-roles.sh` creates the two roles the **first** time the database volume is
+  created, with the passwords from `.env`. If your volume is older than that, recreate it:
+  `docker compose down -v` (**this deletes the database data**), then `docker compose up -d db`.
+- Every connection gets `statement_timeout` 5 s, `lock_timeout` 2 s and
+  `idle_in_transaction_session_timeout` 30 s. A request that hits one gets 503 `TRY_AGAIN`.
+- 5 wrong passwords lock an account for 15 minutes (same 401 message, so nothing leaks).
 
 Set `LEAVEDESK_DATABASE_ECHO=true` to print every SQL statement, which makes N+1 queries
 easy to spot.
@@ -196,6 +213,9 @@ backend/
 │   │   ├── models.py           SQLAlchemy models: every table, constraint and index
 │   │   ├── repository.py       LeaveRepository on PostgreSQL, with the ledger
 │   │   ├── errors.py           Database errors turned into LeaveDesk errors
+│   │   ├── engine.py           Database engine with safety timeouts
+│   │   ├── roles.py            What the app's database role may do
+│   │   ├── users.py            Login accounts and lockout in PostgreSQL
 │   │   ├── notifications.py    Inbox, outbox worker and LISTEN listener
 │   │   ├── seed.py             Demo company, people and balances
 │   │   └── ids.py              UUIDv7 ids
@@ -210,6 +230,7 @@ backend/
 │       ├── schemas.py          Request and response bodies
 │       └── routes/             auth, leave and notification endpoints
 ├── migrations/                 Alembic migrations (schema changes only go here)
+├── docker/initdb/              Creates the database roles on first start
 ├── alembic.ini
 ├── tests/                      Domain tests, API tests in tests/api/, database tests in tests/db/
 ├── Dockerfile

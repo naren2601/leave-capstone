@@ -38,6 +38,15 @@ class Settings(BaseSettings):
     outbox_poll_seconds: float = Field(default=5, gt=0)
     outbox_max_attempts: int = Field(default=5, ge=1)
 
+    # Step 5: safety timeouts on every database connection (see db/engine.py).
+    database_statement_timeout_ms: int = Field(default=5000, ge=1)
+    database_lock_timeout_ms: int = Field(default=2000, ge=1)
+    database_idle_timeout_ms: int = Field(default=30000, ge=1)
+
+    # Step 5: this many wrong passwords in a row lock the account for a while.
+    login_max_failures: int = Field(default=5, ge=1)
+    login_lock_minutes: int = Field(default=15, ge=1)
+
 
 @lru_cache
 def get_settings() -> Settings:

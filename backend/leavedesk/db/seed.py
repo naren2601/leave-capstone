@@ -101,6 +101,27 @@ def seed_tenant(session: Session, name: str, people: list[Employee], year: int) 
     return tenant.id
 
 
+def seed_users(session: Session, tenant_id: int, password_hash: str) -> int:
+    """Give every employee of the tenant without a login one, with this password hash.
+
+    Existing logins (and their lockout counters) are left alone. Returns how many were added.
+    """
+    missing = session.scalars(
+        select(db.Employee.id).where(
+            db.Employee.tenant_id == tenant_id,
+            ~select(db.User.employee_id)
+            .where(db.User.tenant_id == tenant_id, db.User.employee_id == db.Employee.id)
+            .exists(),
+        )
+    ).all()
+    session.add_all(
+        db.User(tenant_id=tenant_id, employee_id=employee_id, password_hash=password_hash)
+        for employee_id in missing
+    )
+    session.flush()
+    return len(missing)
+
+
 def main() -> None:
     from leavedesk.api.state import SEED_PEOPLE
 
@@ -109,8 +130,13 @@ def main() -> None:
         raise SystemExit("Set LEAVEDESK_DATABASE_URL first (see .env.example).")
     tenant = os.environ.get("LEAVEDESK_TENANT_NAME", DEFAULT_TENANT)
     engine = create_engine(url)
+    password = os.environ.get("LEAVEDESK_SEED_PASSWORD")
     with Session(engine) as session, session.begin():
         tenant_id = seed_tenant(session, tenant, SEED_PEOPLE, date.today().year)
+        if password:
+            from leavedesk.api.auth import hash_password
+
+            seed_users(session, tenant_id, hash_password(password))
     engine.dispose()
     print(f"Tenant {tenant!r} is ready (id {tenant_id}).")
 

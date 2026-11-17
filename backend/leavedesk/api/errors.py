@@ -8,8 +8,10 @@ import logging
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from sqlalchemy.exc import DBAPIError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from leavedesk.db.errors import sqlstate
 from leavedesk.domain.exceptions import (
     InsufficientBalanceError,
     InvalidLeaveRequestError,
@@ -47,6 +49,7 @@ HTTP_CODES = {
     409: "CONFLICT",
     422: "VALIDATION_ERROR",
     500: "INTERNAL_ERROR",
+    503: "TRY_AGAIN",
 }
 
 
@@ -117,8 +120,32 @@ async def handle_http_error(request: Request, error: StarletteHTTPException) -> 
     )
 
 
+# PostgreSQL errors where trying again a moment later will most likely work.
+RETRYABLE_SQLSTATES = {
+    "55P03": "a row lock was not free in time (lock_timeout)",
+    "57014": "a query took too long (statement_timeout)",
+    "40P01": "deadlock",
+    "40001": "serialization failure",
+}
+
+
+async def handle_database_error(request: Request, error: DBAPIError) -> JSONResponse:
+    code = sqlstate(error)
+    if code not in RETRYABLE_SQLSTATES:
+        raise error  # unexpected: the middleware logs it and answers 500
+    logger.warning("database busy (%s): %s", code, RETRYABLE_SQLSTATES[code])
+    return error_response(
+        503,
+        "TRY_AGAIN",
+        "the service is busy; please try again in a moment",
+        request_id_of(request),
+        headers={"Retry-After": "1"},
+    )
+
+
 def register_error_handlers(app: FastAPI) -> None:
     app.add_exception_handler(LeaveDeskError, handle_domain_error)
+    app.add_exception_handler(DBAPIError, handle_database_error)
     app.add_exception_handler(RequestValidationError, handle_validation_error)
     app.add_exception_handler(StarletteHTTPException, handle_http_error)
     # Unexpected errors (500) are handled in RequestContextMiddleware, so the

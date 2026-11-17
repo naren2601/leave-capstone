@@ -1,5 +1,6 @@
 """Passwords, JWT tokens and the dependencies that protect routes."""
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Annotated, Literal
@@ -35,22 +36,66 @@ def verify_password(password_hash: str, password: str) -> bool:
         return False
 
 
+# Checked when the email is unknown or the account is locked, so every failed
+# login takes as long as a wrong password, and response times reveal nothing.
+_DUMMY_HASH = hash_password("not-a-real-password")
+
+
+def _utc_now() -> datetime:
+    return datetime.now(UTC)
+
+
 @dataclass
 class UserAccount:
     employee_id: str
     email: str
     password_hash: str
     role: Role
+    failed_logins: int = 0
+    locked_until: datetime | None = None
+
+
+@dataclass(frozen=True)
+class LoginPolicy:
+    """Day 3, step 5: 5 wrong passwords in a row lock the account for 15 minutes."""
+
+    max_failures: int = 5
+    lock_for: timedelta = timedelta(minutes=15)
+
+
+def check_login(account: UserAccount, password: str, now: datetime, policy: LoginPolicy) -> bool:
+    """Check the password and update the account's lockout counters.
+
+    Shared by the in-memory and PostgreSQL stores, so both follow the same rule.
+    A locked account is refused even with the right password, with the same
+    message as a wrong password, so an attacker cannot tell it is locked.
+    """
+    if account.locked_until is not None:
+        if account.locked_until > now:
+            verify_password(_DUMMY_HASH, password)  # same time as a real check
+            return False
+        account.locked_until, account.failed_logins = None, 0  # the lock has expired
+
+    if verify_password(account.password_hash, password):
+        account.failed_logins = 0
+        return True
+
+    account.failed_logins += 1
+    if account.failed_logins >= policy.max_failures:
+        account.locked_until = now + policy.lock_for
+        account.failed_logins = 0
+    return False
 
 
 class UserStore:
-    """Login accounts, kept in memory until Day 3 moves them to PostgreSQL."""
+    """Login accounts in memory (Day 2). PostgreSQL mode uses PostgresUserStore."""
 
-    def __init__(self) -> None:
+    def __init__(
+        self, policy: LoginPolicy | None = None, now: Callable[[], datetime] = _utc_now
+    ) -> None:
         self._by_email: dict[str, UserAccount] = {}
-        # Checked when the email is unknown, so a wrong email takes as long
-        # as a wrong password and response times do not reveal real emails.
-        self._dummy_hash = hash_password("not-a-real-password")
+        self.policy = policy or LoginPolicy()
+        self.now = now
 
     def add(self, account: UserAccount) -> None:
         self._by_email[account.email.lower()] = account
@@ -58,11 +103,9 @@ class UserStore:
     def authenticate(self, email: str, password: str) -> UserAccount | None:
         account = self._by_email.get(email.strip().lower())
         if account is None:
-            verify_password(self._dummy_hash, password)
+            verify_password(_DUMMY_HASH, password)
             return None
-        if not verify_password(account.password_hash, password):
-            return None
-        return account
+        return account if check_login(account, password, self.now(), self.policy) else None
 
 
 # Tokens
