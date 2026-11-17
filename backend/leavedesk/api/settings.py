@@ -26,6 +26,13 @@ class Settings(BaseSettings):
 
     sse_keepalive_seconds: float = Field(default=15, gt=0)
 
+    # Day 3: PostgreSQL. Without a URL the API keeps everything in memory, as on Day 2.
+    # Example: postgresql+psycopg://leavedesk:<password>@localhost:5432/leavedesk
+    database_url: SecretStr | None = None
+    tenant_name: str = "LeaveDesk Demo"
+    # Log every SQL statement, to spot N+1 queries while developing.
+    database_echo: bool = False
+
 
 @lru_cache
 def get_settings() -> Settings:
