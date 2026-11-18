@@ -1,0 +1,144 @@
+<h1>My leave</h1>
+
+<section aria-labelledby="balance-heading">
+  <h2 id="balance-heading">
+    Days available
+    @if (store.balanceStatus() === 'success') {
+      <span class="total">· {{ store.totalAvailable() | number: '1.0-1' }} in total</span>
+    }
+  </h2>
+
+  @if (store.balanceStatus() === 'error') {
+    <p class="muted" role="alert">
+      Your balances could not be loaded.
+      <button mat-button type="button" (click)="store.loadBalances()">Retry</button>
+    </p>
+  } @else {
+    <div class="cards">
+      @for (balance of store.balances(); track balance.leave_type) {
+        <mat-card appearance="outlined" class="balance">
+          <mat-card-content>
+            <div class="type">{{ typeNames[balance.leave_type] }}</div>
+            <div class="available">
+              {{ balance.available | number: '1.0-1' }}
+              <span class="unit">days left</span>
+            </div>
+            <dl>
+              <div>
+                <dt>Entitled</dt>
+                <dd>{{ balance.entitled | number: '1.0-1' }}</dd>
+              </div>
+              <div>
+                <dt>Used</dt>
+                <dd>{{ balance.used | number: '1.0-1' }}</dd>
+              </div>
+              <div>
+                <dt>Pending</dt>
+                <dd>{{ balance.pending | number: '1.0-1' }}</dd>
+              </div>
+            </dl>
+          </mat-card-content>
+        </mat-card>
+      }
+    </div>
+  }
+</section>
+
+<section aria-labelledby="requests-heading">
+  <h2 id="requests-heading">My requests</h2>
+
+  <mat-button-toggle-group
+    aria-label="Show requests with status"
+    [value]="store.statusFilter()"
+    (change)="store.setStatusFilter($event.value)"
+  >
+    @for (filter of filters; track filter.label) {
+      <mat-button-toggle [value]="filter.value">{{ filter.label }}</mat-button-toggle>
+    }
+  </mat-button-toggle-group>
+
+  <app-load-state
+    [state]="listState()"
+    loadingText="Loading your requests…"
+    [emptyText]="emptyText()"
+    [errorText]="store.listError()"
+    (retry)="store.loadRequests()"
+  />
+
+  @if (listState() === 'ready') {
+    <div class="table-scroll">
+      <table mat-table [dataSource]="store.requests()" aria-describedby="requests-heading">
+        <ng-container matColumnDef="type">
+          <th mat-header-cell *matHeaderCellDef>Type</th>
+          <td mat-cell *matCellDef="let r">{{ typeName(r.leave_type) }}</td>
+        </ng-container>
+
+        <ng-container matColumnDef="dates">
+          <th mat-header-cell *matHeaderCellDef>Dates</th>
+          <td mat-cell *matCellDef="let r">
+            {{ r.start_date | date: 'd MMM y' }}
+            @if (r.end_date !== r.start_date) {
+              – {{ r.end_date | date: 'd MMM y' }}
+            }
+            @if (r.day_part !== 'FULL') {
+              ({{ r.day_part === 'AM' ? 'morning' : 'afternoon' }})
+            }
+          </td>
+        </ng-container>
+
+        <ng-container matColumnDef="days">
+          <th mat-header-cell *matHeaderCellDef>Days</th>
+          <td mat-cell *matCellDef="let r">{{ r.days | number: '1.0-1' }}</td>
+        </ng-container>
+
+        <ng-container matColumnDef="status">
+          <th mat-header-cell *matHeaderCellDef>Status</th>
+          <td mat-cell *matCellDef="let r"><app-status-chip [status]="r.status" /></td>
+        </ng-container>
+
+        <ng-container matColumnDef="reason">
+          <th mat-header-cell *matHeaderCellDef>Reason</th>
+          <td mat-cell *matCellDef="let r" class="reason">
+            {{ r.reason }}
+            @if (r.decision_note) {
+              <div class="note">Manager: {{ r.decision_note }}</div>
+            }
+          </td>
+        </ng-container>
+
+        <ng-container matColumnDef="actions">
+          <th mat-header-cell *matHeaderCellDef><span class="visually-hidden">Actions</span></th>
+          <td mat-cell *matCellDef="let r">
+            @if (r.status === 'PENDING') {
+              <button
+                mat-button
+                type="button"
+                [disabled]="store.cancelling().has(r.id)"
+                [attr.aria-label]="
+                  'Cancel ' + typeName(r.leave_type) + ' leave from ' + r.start_date
+                "
+                (click)="cancel(r)"
+              >
+                Cancel
+              </button>
+            }
+          </td>
+        </ng-container>
+
+        <tr mat-header-row *matHeaderRowDef="columns"></tr>
+        <tr mat-row *matRowDef="let row; columns: columns"></tr>
+      </table>
+    </div>
+  }
+
+  @if (store.total() > store.pageSize) {
+    <mat-paginator
+      [length]="store.total()"
+      [pageSize]="store.pageSize"
+      [pageIndex]="store.pageIndex()"
+      [hidePageSize]="true"
+      (page)="onPage($event)"
+      aria-label="Pages of requests"
+    />
+  }
+</section>
