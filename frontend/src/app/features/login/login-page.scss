@@ -1,0 +1,31 @@
+.login-card {
+  max-width: 420px;
+  margin: 48px auto 0;
+}
+
+h1 {
+  margin: 0;
+  font: var(--mat-sys-title-large);
+}
+
+form {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 16px;
+}
+
+.error {
+  margin: 0 0 12px;
+  color: var(--mat-sys-error);
+}
+
+.notice {
+  margin: 8px 0 0;
+}
+
+button mat-spinner {
+  display: inline-block;
+  margin-right: 8px;
+  vertical-align: middle;
+}

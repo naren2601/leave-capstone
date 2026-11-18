@@ -1,0 +1,38 @@
+// Material 3 colours a toolbar through tokens, not color="primary".
+mat-toolbar {
+  --mat-toolbar-container-background-color: var(--mat-sys-primary);
+  --mat-toolbar-container-text-color: var(--mat-sys-on-primary);
+  --mat-button-text-label-text-color: var(--mat-sys-on-primary);
+  gap: 8px;
+  flex-wrap: wrap;
+  height: auto;
+  min-height: 64px;
+}
+
+.app-name {
+  font-weight: 500;
+  margin-right: 8px;
+}
+
+nav a.active {
+  text-decoration: underline;
+  text-underline-offset: 6px;
+}
+
+.spacer {
+  flex: 1 1 auto;
+}
+
+.who {
+  font: var(--mat-sys-body-medium);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 40vw;
+}
+
+.page {
+  box-sizing: border-box;
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 16px;
+}
