@@ -238,6 +238,12 @@ def search_employees(
     return store.repository.search_employees(q.strip(), limit)
 
 
+@router.get("/team", response_model=list[EmployeeOut])
+def my_team(user: ManagerUser, store: StoreDep) -> list[Employee]:
+    """The signed-in manager's direct reports, so screens can show names, not ids."""
+    return sorted(store.repository.direct_reports(user.id), key=lambda e: e.name)
+
+
 @router.get("/leave-requests/{request_id}", response_model=LeaveRequestOut)
 def get_leave_request(
     request_id: str, user: User, store: StoreDep, response: Response

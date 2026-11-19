@@ -1,0 +1,78 @@
+<h1>Approvals</h1>
+<p class="intro" aria-live="polite">
+  @if (state() === 'ready') {
+    {{ store.count() }} {{ store.count() === 1 ? 'request is' : 'requests are' }} waiting for you.
+  }
+</p>
+
+<app-load-state
+  [state]="state()"
+  loadingText="Loading your team's requests…"
+  emptyText="Nothing is waiting for you. All your team's requests have been decided."
+  [errorText]="store.error()"
+  (retry)="store.load()"
+/>
+
+@if (state() === 'ready') {
+  <div class="table-scroll">
+    <table mat-table [dataSource]="store.requests()" aria-label="Requests waiting for you">
+      <ng-container matColumnDef="employee">
+        <th mat-header-cell *matHeaderCellDef>Employee</th>
+        <td mat-cell *matCellDef="let r">{{ store.nameOf(r.employee_id) }}</td>
+      </ng-container>
+
+      <ng-container matColumnDef="type">
+        <th mat-header-cell *matHeaderCellDef>Type</th>
+        <td mat-cell *matCellDef="let r">{{ typeName(r.leave_type) }}</td>
+      </ng-container>
+
+      <ng-container matColumnDef="dates">
+        <th mat-header-cell *matHeaderCellDef>Dates</th>
+        <td mat-cell *matCellDef="let r">
+          {{ r.start_date | date: 'd MMM y' }}
+          @if (r.end_date !== r.start_date) {
+            – {{ r.end_date | date: 'd MMM y' }}
+          }
+          @if (r.day_part !== 'FULL') {
+            ({{ r.day_part === 'AM' ? 'morning' : 'afternoon' }})
+          }
+        </td>
+      </ng-container>
+
+      <ng-container matColumnDef="days">
+        <th mat-header-cell *matHeaderCellDef>Days</th>
+        <td mat-cell *matCellDef="let r">{{ r.days | number: '1.0-1' }}</td>
+      </ng-container>
+
+      <ng-container matColumnDef="reason">
+        <th mat-header-cell *matHeaderCellDef>Reason</th>
+        <td mat-cell *matCellDef="let r" class="reason">{{ r.reason }}</td>
+      </ng-container>
+
+      <ng-container matColumnDef="actions">
+        <th mat-header-cell *matHeaderCellDef>Decision</th>
+        <td mat-cell *matCellDef="let r" class="actions">
+          <button
+            mat-flat-button
+            type="button"
+            [attr.aria-label]="'Approve ' + store.nameOf(r.employee_id) + ', ' + r.start_date"
+            (click)="approve(r)"
+          >
+            Approve
+          </button>
+          <button
+            mat-stroked-button
+            type="button"
+            [attr.aria-label]="'Reject ' + store.nameOf(r.employee_id) + ', ' + r.start_date"
+            (click)="reject(r)"
+          >
+            Reject
+          </button>
+        </td>
+      </ng-container>
+
+      <tr mat-header-row *matHeaderRowDef="columns"></tr>
+      <tr mat-row *matRowDef="let row; columns: columns"></tr>
+    </table>
+  </div>
+}

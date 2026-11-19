@@ -139,3 +139,21 @@ def test_employees_cannot_search(client, auth):
 
 def test_search_needs_two_characters(client, auth):
     assert client.get("/employees?q=a", headers=auth("m1")).status_code == 422
+
+
+# The manager's team (Day 4: the Approvals screen shows names, not ids)
+
+
+def test_manager_gets_their_direct_reports_by_name(client, auth):
+    ravi = client.get("/team", headers=auth("m1")).json()
+    meena = client.get("/team", headers=auth("m2")).json()
+
+    assert ravi == [
+        {"id": "e1", "name": "Asha Rao", "manager_id": "m1"},
+        {"id": "e2", "name": "Kiran Das", "manager_id": "m1"},
+    ]
+    assert [e["id"] for e in meena] == ["e3"]
+
+
+def test_employees_have_no_team(client, auth):
+    assert client.get("/team", headers=auth("e1")).status_code == 403

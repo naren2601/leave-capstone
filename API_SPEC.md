@@ -53,6 +53,7 @@ without changing the API.
 | POST | `/leave-requests` | Employee (applies for self) | `ApplyLeave` | `LeaveRequest` | 201, 401, 409, 422 |
 | GET | `/leave-requests` | Employee or manager | Query: `status`, `employee_id`, `sort`, `limit`, `offset` or `cursor` | Page of `LeaveRequest` | 200, 401, 403, 422 |
 | GET | `/employees` | Manager | Query: `q` (2 to 100 characters), `limit` (1 to 50) | List of `{id, name, manager_id}` whose name contains `q`, ignoring case | 200, 401, 403, 422 |
+| GET | `/team` | Manager | — | The manager's direct reports, `[{id, name, manager_id}]`, sorted by name (added on Day 4 so screens can show names) | 200, 401, 403 |
 | GET | `/leave-requests/{id}` | Owner or their manager | — | `LeaveRequest` | 200, 401, 404 |
 | POST | `/leave-requests/{id}/approve` | The owner's manager | — | `LeaveRequest` | 200, 401, 403, 404, 409 |
 | POST | `/leave-requests/{id}/reject` | The owner's manager | `{reason}` | `LeaveRequest` | 200, 401, 403, 404, 409, 422 |
