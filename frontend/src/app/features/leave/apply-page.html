@@ -1,0 +1,86 @@
+<h1>Apply for leave</h1>
+
+<form [formGroup]="form" (ngSubmit)="submit()" novalidate>
+  <mat-form-field appearance="outline">
+    <mat-label>Leave type</mat-label>
+    <mat-select formControlName="leaveType">
+      @for (type of leaveTypes; track type[0]) {
+        <mat-option [value]="type[0]">{{ type[1] }}</mat-option>
+      }
+    </mat-select>
+  </mat-form-field>
+
+  <div class="dates">
+    <mat-form-field appearance="outline">
+      <mat-label>Start date</mat-label>
+      <input matInput [matDatepicker]="startPicker" formControlName="startDate" />
+      <mat-hint>DD/MM/YYYY</mat-hint>
+      <mat-datepicker-toggle matIconSuffix [for]="startPicker" />
+      <mat-datepicker #startPicker />
+      @if (form.controls.startDate.hasError('matDatepickerParse')) {
+        <mat-error>That is not a date.</mat-error>
+      } @else if (form.controls.startDate.hasError('required')) {
+        <mat-error>Choose a start date.</mat-error>
+      }
+    </mat-form-field>
+
+    <mat-form-field appearance="outline">
+      <mat-label>End date</mat-label>
+      <input
+        matInput
+        [matDatepicker]="endPicker"
+        [min]="form.controls.startDate.value"
+        formControlName="endDate"
+      />
+      <mat-hint>DD/MM/YYYY</mat-hint>
+      <mat-datepicker-toggle matIconSuffix [for]="endPicker" />
+      <mat-datepicker #endPicker />
+      @if (form.controls.endDate.hasError('matDatepickerParse')) {
+        <mat-error>That is not a date.</mat-error>
+      } @else if (form.controls.endDate.hasError('required')) {
+        <mat-error>Choose an end date.</mat-error>
+      } @else if (form.controls.endDate.hasError('endBeforeStart')) {
+        <mat-error>The end date cannot be before the start date.</mat-error>
+      } @else if (form.controls.endDate.hasError('halfDayNotOneDay')) {
+        <mat-error>A half day must start and end on the same date.</mat-error>
+      }
+    </mat-form-field>
+  </div>
+
+  <fieldset>
+    <legend>How much of the day</legend>
+    <mat-radio-group formControlName="dayPart" aria-label="How much of the day">
+      @for (part of dayParts; track part.value) {
+        <mat-radio-button [value]="part.value">{{ part.label }}</mat-radio-button>
+      }
+    </mat-radio-group>
+  </fieldset>
+
+  <mat-form-field appearance="outline">
+    <mat-label>Reason</mat-label>
+    <textarea matInput formControlName="reason" rows="3" maxlength="500"></textarea>
+    <mat-hint align="end">{{ form.controls.reason.value.length }} / 500</mat-hint>
+    @if (form.controls.reason.hasError('required')) {
+      <mat-error>Give a short reason.</mat-error>
+    } @else if (form.controls.reason.hasError('tooShort')) {
+      <mat-error>Use at least 5 characters.</mat-error>
+    }
+  </mat-form-field>
+
+  @if (problem(); as p) {
+    <div class="problem" role="alert">
+      <strong>{{ p.title }}</strong>
+      <p>{{ p.message }}</p>
+      @for (detail of p.details; track detail) {
+        <p>{{ detail }}</p>
+      }
+    </div>
+  }
+
+  <div class="actions">
+    <a mat-button routerLink="/leave">Back</a>
+    <button mat-flat-button type="submit" [disabled]="sending()">
+      {{ sending() ? 'Sending…' : 'Submit request' }}
+    </button>
+  </div>
+</form>

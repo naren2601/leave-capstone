@@ -3,7 +3,15 @@ import { Injectable, inject } from '@angular/core';
 import { Observable } from 'rxjs';
 
 import { API_URL } from '../../core/api';
-import { Balance, LeaveRequest, LeaveStatus, Page } from '../../core/models';
+import { Balance, DayPart, LeaveRequest, LeaveStatus, LeaveType, Page } from '../../core/models';
+
+export interface ApplyLeave {
+  leave_type: LeaveType;
+  start_date: string;
+  end_date: string;
+  day_part: DayPart;
+  reason: string;
+}
 
 /** The leave endpoints of the API. Only talks HTTP; no state, no decisions. */
 @Injectable({ providedIn: 'root' })
@@ -33,6 +41,16 @@ export class LeaveApi {
       params = params.set('status', query.status);
     }
     return this.http.get<Page<LeaveRequest>>(`${this.api}/leave-requests`, { params });
+  }
+
+  /**
+   * The Idempotency-Key makes a retry safe: if the first try reached the server but the
+   * answer got lost, sending the same key again returns that first request, not a copy.
+   */
+  apply(body: ApplyLeave, idempotencyKey: string): Observable<LeaveRequest> {
+    return this.http.post<LeaveRequest>(`${this.api}/leave-requests`, body, {
+      headers: { 'Idempotency-Key': idempotencyKey },
+    });
   }
 
   /** If-Match: the API refuses (409) if someone changed the request since we loaded it. */

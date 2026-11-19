@@ -6,6 +6,7 @@ import { MatCardModule } from '@angular/material/card';
 import { MatPaginatorModule, PageEvent } from '@angular/material/paginator';
 import { MatSnackBar } from '@angular/material/snack-bar';
 import { MatTableModule } from '@angular/material/table';
+import { RouterLink } from '@angular/router';
 
 import { LEAVE_TYPE_NAMES, LeaveRequest, LeaveStatus, LeaveType } from '../../core/models';
 import { LoadState } from '../../shared/load-state';
@@ -22,6 +23,7 @@ import { LeaveStore } from './leave-store';
     MatCardModule,
     MatPaginatorModule,
     MatTableModule,
+    RouterLink,
     LoadState,
     StatusChip,
   ],
