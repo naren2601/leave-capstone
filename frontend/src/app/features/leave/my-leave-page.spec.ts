@@ -5,15 +5,22 @@ import { provideRouter } from '@angular/router';
 import { render, screen, within } from '@testing-library/angular';
 import userEvent from '@testing-library/user-event';
 
+import { aNotification, provideFakeEventSource } from '../../../testing/fake-event-source';
 import { aPage, aRequest, BALANCES } from '../../../testing/leave-data';
 import { startSignedInAs } from '../../../testing/sign-in';
+import { NotificationsStore } from '../notifications/notifications-store';
 import { MyLeavePage } from './my-leave-page';
 
 async function setup() {
   sessionStorage.clear();
   startSignedInAs('employee');
   const view = await render(MyLeavePage, {
-    providers: [provideHttpClient(), provideHttpClientTesting(), provideRouter([])],
+    providers: [
+      provideHttpClient(),
+      provideHttpClientTesting(),
+      provideRouter([]),
+      provideFakeEventSource(),
+    ],
   });
   const http = TestBed.inject(HttpTestingController);
   const answerBalances = () => http.expectOne('/api/employees/e1/balance').flush(BALANCES);
@@ -98,5 +105,24 @@ describe('MyLeavePage', () => {
     const row = (await screen.findAllByRole('row'))[1];
     expect(await within(row).findByText('Cancelled')).toBeVisible();
     expect(screen.queryByRole('button', { name: /cancel annual leave/i })).toBeNull();
+  });
+
+  it('reloads balances and requests when a notification arrives (say "approved")', async () => {
+    const { answerBalances, list, view } = await setup();
+    answerBalances();
+    list().flush(aPage([aRequest({ status: 'PENDING' })]));
+    expect(await screen.findByText('Pending')).toBeVisible();
+
+    // What NotificationsStore does when the server pushes one.
+    TestBed.inject(NotificationsStore)['receive'](aNotification({ id: 'n9' }));
+    view.detectChanges();
+
+    await vi.waitFor(() => answerBalances());
+    list().flush(aPage([aRequest({ status: 'APPROVED' })]));
+    view.detectChanges();
+    await vi.waitFor(() => {
+      const row = screen.getAllByRole('row')[1];
+      expect(within(row).getByText('Approved')).toBeVisible();
+    });
   });
 });

@@ -1,5 +1,5 @@
 import { DatePipe, DecimalPipe } from '@angular/common';
-import { Component, computed, inject, OnInit } from '@angular/core';
+import { Component, computed, effect, inject, OnInit, untracked } from '@angular/core';
 import { MatButtonModule } from '@angular/material/button';
 import { MatButtonToggleModule } from '@angular/material/button-toggle';
 import { MatCardModule } from '@angular/material/card';
@@ -10,6 +10,7 @@ import { RouterLink } from '@angular/router';
 
 import { LEAVE_TYPE_NAMES, LeaveRequest, LeaveStatus, LeaveType } from '../../core/models';
 import { LoadState } from '../../shared/load-state';
+import { NotificationsStore } from '../notifications/notifications-store';
 import { StatusChip } from '../../shared/status-chip';
 import { LeaveStore } from './leave-store';
 
@@ -63,6 +64,20 @@ export class MyLeavePage implements OnInit {
   /** Table rows arrive untyped from mat-table, so look names up through a typed method. */
   protected typeName(type: LeaveType): string {
     return LEAVE_TYPE_NAMES[type];
+  }
+
+  constructor() {
+    // When a notification arrives (say "approved"), reload the balances and the list, so
+    // the page matches the message without the user pressing reload.
+    const notifications = inject(NotificationsStore);
+    let seen = notifications.lastReceived(); // ignore one that arrived before this page
+    effect(() => {
+      const latest = notifications.lastReceived();
+      if (latest && latest !== seen) {
+        seen = latest;
+        untracked(() => this.store.load());
+      }
+    });
   }
 
   ngOnInit(): void {

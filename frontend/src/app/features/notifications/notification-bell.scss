@@ -1,0 +1,59 @@
+.bell {
+  color: inherit; // white on the blue toolbar
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.panel {
+  width: min(368px, 88vw);
+  padding: 4px 16px 8px;
+  box-sizing: border-box;
+}
+
+.panel-title {
+  font: var(--mat-sys-title-small);
+  margin: 8px 0;
+}
+
+ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 360px;
+  overflow-y: auto;
+}
+
+li {
+  overflow-wrap: anywhere; // long words wrap instead of being cut off
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 0;
+  border-top: 1px solid var(--mat-sys-outline-variant);
+  font: var(--mat-sys-body-medium);
+}
+
+li.new .message {
+  font-weight: 600;
+}
+
+.when {
+  font: var(--mat-sys-body-small);
+  color: var(--mat-sys-on-surface-variant);
+}
+
+.state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 16px 0;
+  color: var(--mat-sys-on-surface-variant);
+}

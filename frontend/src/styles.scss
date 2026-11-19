@@ -41,3 +41,8 @@ body {
   height: 100%;
 }
 /* You can add global styles to this file, and also import other style files */
+
+// The notification panel (a Material menu) is narrow by default; long messages need room.
+.mat-mdc-menu-panel.notification-panel {
+  max-width: min(400px, 92vw);
+}

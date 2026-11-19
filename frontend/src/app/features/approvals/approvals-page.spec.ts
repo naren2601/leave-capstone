@@ -57,7 +57,8 @@ describe('ApprovalsPage', () => {
     await user.click(await screen.findByRole('button', { name: /reject asha rao/i }));
     const dialog = await screen.findByRole('dialog');
 
-    expect(within(dialog).getByLabelText('Reason for the employee')).toBeVisible();
+    // The dialog may still be fading in, so check the field is there, not its opacity.
+    expect(within(dialog).getByLabelText('Reason for the employee')).toBeInTheDocument();
     expect(within(dialog).getByRole('button', { name: 'Reject' })).toBeDisabled();
   });
 

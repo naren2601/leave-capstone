@@ -39,3 +39,14 @@ export const LEAVE_TYPE_NAMES: Record<LeaveType, string> = {
   SICK: 'Sick',
   CASUAL: 'Casual',
 };
+
+export type NotificationEvent = 'SUBMITTED' | 'APPROVED' | 'REJECTED' | 'CANCELLED';
+
+export interface AppNotification {
+  id: string;
+  recipient: string;
+  event: NotificationEvent;
+  message: string;
+  read: boolean;
+  created_at: string; // ISO date-time
+}
