@@ -8,12 +8,14 @@ and everyone involved is notified.
 | 1 | Domain core in plain Python | [SPEC.md](SPEC.md) |
 | 2 | REST API with FastAPI, JWT login, live notifications, Docker | [API_SPEC.md](API_SPEC.md) |
 | 3 | PostgreSQL with SQLAlchemy 2 and Alembic, measured at 100,000 requests | [SCHEMA.md](SCHEMA.md), [PERF.md](PERF.md) |
+| 4 | Angular web app (Signals, Material), Playwright end-to-end tests, nginx in Docker | [UI_SPEC.md](UI_SPEC.md), [frontend/README.md](frontend/README.md) |
 
 ## Requirements
 
 - Python 3.12 or newer
 - Git
 - Docker Desktop (only for `docker compose up`)
+- Node.js 22.22+ or 24.15+ (only for the web app in `frontend/`)
 
 ## Setup
 
@@ -94,8 +96,30 @@ Then submit leave as Asha from Swagger. The notification appears in the stream s
 docker compose up --build
 ```
 
-This starts PostgreSQL, applies the migrations, and starts the API on
-<http://localhost:8000/docs>. Stop it with `Ctrl+C`, then `docker compose down`.
+This starts three containers:
+
+| Service | What it is | Address |
+|---|---|---|
+| `db` | PostgreSQL 17 | `127.0.0.1:5432` (or `POSTGRES_HOST_PORT`) |
+| `api` | Applies the migrations, seeds the demo users, starts the API | <http://localhost:8000/docs> |
+| `web` | The Angular app, served by nginx, which forwards `/api/...` to the API | <http://localhost:8080> |
+
+Open <http://localhost:8080> and sign in as `asha@leavedesk.dev` or `ravi@leavedesk.dev`
+(password: `LEAVEDESK_SEED_PASSWORD` from `.env`). Stop it with `Ctrl+C`, then
+`docker compose down`. Stop a locally running API (port 8000) first, or the `api`
+container cannot start.
+
+The end-to-end tests run against it too (this is Day 4's "done when"):
+
+```powershell
+cd ..\frontend
+$env:E2E_BASE_URL = "http://localhost:8080"
+npm run e2e
+Remove-Item Env:E2E_BASE_URL     # back to testing `npm start`
+```
+
+To start again from fresh demo data, `docker compose down -v` (**this deletes the database
+data**), then `docker compose up --build`.
 
 ## Database (Day 3)
 

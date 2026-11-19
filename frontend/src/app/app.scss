@@ -23,6 +23,13 @@ nav a.active {
   flex: 1 1 auto;
 }
 
+// Holds the bell's place while its code downloads, so the toolbar does not jump.
+.bell-placeholder {
+  display: inline-block;
+  width: 48px;
+  height: 48px;
+}
+
 .who {
   font: var(--mat-sys-body-medium);
   overflow: hidden;

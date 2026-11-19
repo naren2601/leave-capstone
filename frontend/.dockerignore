@@ -1,0 +1,13 @@
+# Only what the build needs goes into the Docker build.
+node_modules
+dist
+.angular
+e2e
+test-results
+playwright-report
+blob-report
+coverage
+.vscode
+*.log
+Dockerfile
+.dockerignore

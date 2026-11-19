@@ -1,6 +1,6 @@
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
-import { TestBed } from '@angular/core/testing';
+import { DeferBlockState, TestBed } from '@angular/core/testing';
 import { provideRouter, Router } from '@angular/router';
 import { render, screen } from '@testing-library/angular';
 
@@ -26,6 +26,9 @@ async function renderSignedInAs(role: 'employee' | 'manager' | null) {
       .flush({ access_token: fakeToken(role) });
     await done;
     view.detectChanges();
+    // The bell is in an @defer block: load it now instead of waiting for the browser to idle.
+    const [bell] = await view.fixture.getDeferBlocks();
+    await bell.render(DeferBlockState.Complete);
   }
 }
 
@@ -44,6 +47,7 @@ describe('App toolbar', () => {
     expect(screen.queryByRole('link', { name: 'Approvals' })).toBeNull();
     expect(screen.getByText('employee@leavedesk.dev')).toBeVisible();
     expect(screen.getByRole('button', { name: 'Log out' })).toBeVisible();
+    expect(screen.getByRole('button', { name: /^Notifications, / })).toBeVisible();
   });
 
   it('shows Approvals to a manager', async () => {
@@ -52,7 +56,7 @@ describe('App toolbar', () => {
     expect(screen.getByRole('link', { name: 'Approvals' })).toBeVisible();
   });
 
-  it('signing in opens the live notification line; logging out closes it', async () => {
+  it('the bell opens the live notification line after sign-in; logging out closes it', async () => {
     await renderSignedInAs('employee');
     await vi.waitFor(() => expect(FakeEventSource.latest).not.toBeNull());
     const line = FakeEventSource.latest!;
