@@ -1,0 +1,6 @@
+# Store text files with Linux line endings (LF) in the repository, whatever computer
+# commits them. Windows can still show them with CRLF in the working folder.
+* text=auto
+
+# Shell scripts run inside Linux containers: always LF, even on Windows.
+*.sh text eol=lf

@@ -1,0 +1,63 @@
+import { HttpClient, HttpParams } from '@angular/common/http';
+import { Injectable, inject } from '@angular/core';
+import { Observable } from 'rxjs';
+
+import { API_URL } from '../../core/api';
+import { Balance, DayPart, LeaveRequest, LeaveStatus, LeaveType, Page } from '../../core/models';
+
+export interface ApplyLeave {
+  leave_type: LeaveType;
+  start_date: string;
+  end_date: string;
+  day_part: DayPart;
+  reason: string;
+}
+
+/** The leave endpoints of the API. Only talks HTTP; no state, no decisions. */
+@Injectable({ providedIn: 'root' })
+export class LeaveApi {
+  private readonly http = inject(HttpClient);
+  private readonly api = inject(API_URL);
+
+  balances(employeeId: string): Observable<Balance[]> {
+    return this.http.get<Balance[]>(
+      `${this.api}/employees/${encodeURIComponent(employeeId)}/balance`,
+    );
+  }
+
+  /** One person's requests, newest first. A manager would otherwise also get the team's. */
+  myRequests(query: {
+    employeeId: string;
+    status: LeaveStatus | null;
+    limit: number;
+    offset: number;
+  }): Observable<Page<LeaveRequest>> {
+    let params = new HttpParams()
+      .set('employee_id', query.employeeId)
+      .set('limit', query.limit)
+      .set('offset', query.offset)
+      .set('sort', '-start_date');
+    if (query.status) {
+      params = params.set('status', query.status);
+    }
+    return this.http.get<Page<LeaveRequest>>(`${this.api}/leave-requests`, { params });
+  }
+
+  /**
+   * The Idempotency-Key makes a retry safe: if the first try reached the server but the
+   * answer got lost, sending the same key again returns that first request, not a copy.
+   */
+  apply(body: ApplyLeave, idempotencyKey: string): Observable<LeaveRequest> {
+    return this.http.post<LeaveRequest>(`${this.api}/leave-requests`, body, {
+      headers: { 'Idempotency-Key': idempotencyKey },
+    });
+  }
+
+  /** If-Match: the API refuses (409) if someone changed the request since we loaded it. */
+  cancel(request: LeaveRequest): Observable<LeaveRequest> {
+    return this.http.delete<LeaveRequest>(
+      `${this.api}/leave-requests/${encodeURIComponent(request.id)}`,
+      { headers: { 'If-Match': `"${request.version}"` } },
+    );
+  }
+}
